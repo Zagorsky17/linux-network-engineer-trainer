@@ -172,6 +172,29 @@
 
   /* ---------- выборки для UI ---------- */
 
+  /* Отметки о прочитанных уроках: по ним панель задания предлагает теорию
+     тем, кто её ещё не открывал, и не мешает тем, кто уже прочитал. */
+  function markLessonRead(id) {
+    var p = get();
+    p.lessons = p.lessons || {};
+    var rec = p.lessons[id] || (p.lessons[id] = { readAt: 0, times: 0 });
+    rec.readAt = Date.now();
+    rec.times++;
+    save();
+    NET.bus.emit('progress:updated', { reason: 'lesson', id: id });
+    return rec;
+  }
+
+  function isLessonRead(id) {
+    var p = get();
+    return !!(p.lessons && p.lessons[id] && p.lessons[id].readAt);
+  }
+
+  function lessonsRead() {
+    var p = get();
+    return Object.keys(p.lessons || {}).filter(function (k) { return p.lessons[k].readAt; });
+  }
+
   function skillStats(id) { return get().skills[id] || NET.skills.emptyStats(); }
 
   function skillsView() {
@@ -225,6 +248,9 @@
     get: get,
     recordLab: recordLab,
     recordTask: recordTask,
+    markLessonRead: markLessonRead,
+    isLessonRead: isLessonRead,
+    lessonsRead: lessonsRead,
     skillStats: skillStats,
     skillsView: skillsView,
     overall: overall,

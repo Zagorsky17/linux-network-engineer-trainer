@@ -44,6 +44,7 @@
 "learn/skills.js",
 "learn/progress.js",
 "learn/theory.js",
+"learn/lessons.js",
 "learn/srs.js",
 "learn/modes.js",
 "learn/debrief.js",

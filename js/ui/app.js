@@ -28,8 +28,9 @@
   }
 
   function switchCenterTab(name) {
-    switchTabs('#center-tabs', ['terminal', 'topology'], name);
+    switchTabs('#center-tabs', ['terminal', 'topology', 'lesson'], name);
     if (name === 'topology') NET.ui.topology.render();
+    if (name === 'lesson') NET.ui.lesson.render();
     if (name === 'terminal') NET.ui.terminal.focus();
   }
 
@@ -204,6 +205,7 @@
         NET.ui.task.render();
         NET.ui.debrief.render();
         NET.ui.topology.render();
+        NET.ui.lesson.renderIndex();
         NET.ui.shortcuts.init();
         updateTopbar();
 
