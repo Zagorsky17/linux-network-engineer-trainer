@@ -146,6 +146,17 @@
       actions.appendChild(button('Начать ' + next.id.toUpperCase(), null, 'primary', function () {
         NET.ui.labs.start(next.id);
       }));
+      var lead = NET.lessons.forLab(next.id);
+      if (lead && !NET.progress.isLessonRead(lead.id)) {
+        actions.appendChild(button('Сначала теория', null, '', function () {
+          NET.ui.lesson.show(lead.id);
+        }));
+      }
+    }
+    if (!NET.progress.isLessonRead('linux-basics')) {
+      actions.appendChild(button('Основы Linux', null, '', function () {
+        NET.ui.lesson.show('linux-basics');
+      }));
     }
     actions.appendChild(button('Quick Practice', null, '', function () {
       NET.modes.set('quick');
@@ -240,6 +251,12 @@
 
     var actions = h('div', 'task-meta');
     actions.appendChild(button('Проверить', '⌘↵', 'primary', function () { NET.ui.labs.check(); }));
+    var lesson = NET.lessons.forLab(lab.id);
+    if (lesson) {
+      actions.appendChild(button(
+        NET.progress.isLessonRead(lesson.id) ? 'Теория' : 'Теория к задаче', null, '',
+        function () { NET.ui.lesson.show(lesson.id); }));
+    }
     if (mode.hints !== false) {
       actions.appendChild(button('Подсказка', 'F2', '', function () { NET.ui.labs.hint(); }));
     }

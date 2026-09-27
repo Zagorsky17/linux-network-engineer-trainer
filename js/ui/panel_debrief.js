@@ -89,6 +89,14 @@
       root.appendChild(ul2);
     }
 
+    var lesson = NET.lessons.forLab(d.labId);
+    if (lesson) {
+      root.appendChild(h('div', 'section-title', 'Разобраться глубже'));
+      var lessonBtn = h('button', 'btn', 'Урок: ' + lesson.title);
+      lessonBtn.addEventListener('click', function () { NET.ui.lesson.show(lesson.id); });
+      root.appendChild(lessonBtn);
+    }
+
     if (d.nextVariant) {
       root.appendChild(h('div', 'section-title', 'Закрепить'));
       var btn = h('button', 'btn primary', d.nextVariant.title);

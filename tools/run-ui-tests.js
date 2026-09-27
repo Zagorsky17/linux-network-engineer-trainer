@@ -5,7 +5,7 @@ const ROOT = process.argv[2];
 
 const engineFiles = JSON.parse(fs.readFileSync(path.join(__dirname, 'files.json'), 'utf8'));
 const uiFiles = ['ui/dom.js', 'ui/notify.js', 'ui/pager.js', 'ui/terminal.js', 'ui/panel_task.js', 'ui/panel_labs.js',
-  'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_history.js',
+  'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js', 'ui/panel_history.js',
   'ui/palette.js', 'ui/shortcuts.js', 'ui/app.js'];
 
 parseHtml(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'));
@@ -183,6 +183,27 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   ok(codeCheck === 0 && NET.labs.current().solved, 'lab03 решается и check возвращает 0', 'exit ' + codeCheck);
   await NET.ui.terminal.run('lab start nolab');
   ok(text('term-out').indexOf('нет лаборатории nolab') >= 0, 'неизвестная лаборатория даёт понятную ошибку');
+
+  /* теоретическая часть */
+  NET.ui.app.switchCenterTab('lesson');
+  ok(text('tab-lesson').indexOf('Теория') >= 0, 'вкладка теории показывает список уроков');
+  ok($('tab-lesson').querySelectorAll('.lesson-card').length >= 11,
+    'в списке все уроки', String($('tab-lesson').querySelectorAll('.lesson-card').length));
+  $('tab-lesson').querySelectorAll('.lesson-card')[0].dispatch('click');
+  ok(text('tab-lesson').indexOf('Основные команды Linux') >= 0, 'урок открывается по клику');
+  ok(text('tab-lesson').indexOf('Коротко') >= 0, 'в уроке есть блок «Коротко»');
+  ok(text('tab-lesson').indexOf('Типичные ошибки') >= 0, 'в уроке есть разбор ошибок');
+  NET.progress.markLessonRead('linux-basics');
+  ok(NET.progress.isLessonRead('linux-basics'), 'отметка о прочтении сохраняется');
+
+  await NET.ui.terminal.run('lesson list');
+  ok(text('term-out').indexOf('linux-basics') >= 0, 'команда lesson list выводит уроки');
+  await NET.ui.terminal.run('lesson lab06');
+  ok(NET.ui.lesson.current() === 'lab06', 'команда lesson открывает урок во вкладке');
+  ok(text('tab-lesson').indexOf('MTU') >= 0, 'открыт нужный урок');
+  await NET.ui.terminal.run('lesson нет-такого');
+  ok(text('term-out').indexOf('нет урока') >= 0, 'неизвестный урок даёт понятную ошибку');
+  NET.ui.app.switchCenterTab('terminal');
 
   ok(errors.length === 0, 'нет ошибок в console.error', errors.slice(0, 3).join(' | '));
 

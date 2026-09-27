@@ -14,8 +14,8 @@
     ['F2', 'подсказка (hint)'],
     ['F5', 'сбросить лабораторию'],
     ['Ctrl/⌘ + K', 'командная палитра'],
-    ['Alt + 1 / 2', 'терминал / схема топологии'],
-    ['Alt + 3 / 4 / 5', 'задание / разбор / история'],
+    ['Alt + 1 / 2 / 3', 'терминал / схема топологии / теория'],
+    ['Alt + 4 / 5 / 6', 'задание / разбор / история'],
     ['Alt + Q', 'быстрая задача (Quick Practice)'],
     ['Ctrl + L', 'очистить терминал'],
     ['Ctrl + C', 'прервать выполнение'],
@@ -105,7 +105,10 @@
       if (e.key === 'F5') { NET.ui.labs.reset(); e.preventDefault(); return; }
 
       if (e.altKey && !ctrl) {
-        var map = { '1': ['center', 'terminal'], '2': ['center', 'topology'], '3': ['right', 'task'], '4': ['right', 'debrief'], '5': ['right', 'history'] };
+        var map = {
+          '1': ['center', 'terminal'], '2': ['center', 'topology'], '3': ['center', 'lesson'],
+          '4': ['right', 'task'], '5': ['right', 'debrief'], '6': ['right', 'history']
+        };
         if (map[e.key]) {
           var t = map[e.key];
           if (t[0] === 'center') NET.ui.app.switchCenterTab(t[1]);

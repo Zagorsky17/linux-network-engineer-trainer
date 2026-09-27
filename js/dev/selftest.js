@@ -67,6 +67,7 @@
       testCapture(r);
       testLearn(r);
       testLimits(r);
+      testLessons(r);
       testSchema(r);
       testLabs(r);
     } catch (e) {
@@ -633,6 +634,60 @@
     var yaml = NET.netcfg.parseYaml('network:\n  version: 2\n  __proto__:\n    x: 1\n');
     r.ok(yaml.errors.length > 0 && ({}).x === undefined,
       'YAML с __proto__ отвергается и не загрязняет Object.prototype');
+  }
+
+  /* ---------- теоретическая часть ---------- */
+
+  function testLessons(r) {
+    r.section('lessons: теория к лабораториям');
+    var all = NET.lessons.list();
+    r.ok(all.length >= 11, 'уроков не меньше 11 (вводный + по одному на лабораторию)',
+      'сейчас ' + all.length);
+    r.ok(!!NET.lessons.get('linux-basics'), 'есть вводный урок по командам Linux');
+
+    var skills = {};
+    NET.skills.list.forEach(function (s) { skills[s.id] = true; });
+
+    NET.labs.list().forEach(function (lab) {
+      r.ok(!!NET.lessons.forLab(lab.id), lab.id + ': к лабораторной есть урок');
+    });
+
+    var badCommands = [];
+    all.forEach(function (l) {
+      var where = l.id + ': ';
+      r.ok(typeof l.title === 'string' && l.title.length > 10, where + 'есть заголовок');
+      r.ok(skills[l.skill], where + 'навык указан корректно', l.skill);
+      r.ok(l.minutes > 0 && l.minutes < 60, where + 'указано время чтения');
+      r.ok(typeof l.lead === 'string' && l.lead.length > 150, where + 'есть вводный абзац');
+      r.ok(l.sections.length >= 3, where + 'не меньше трёх разделов', String(l.sections.length));
+      r.ok((l.summary || []).length >= 3, where + 'есть блок «Коротко»');
+      r.ok((l.pitfalls || []).length >= 2, where + 'перечислены типичные ошибки');
+      r.ok(typeof l.practice === 'string' && l.practice.length > 40, where + 'есть переход к практике');
+
+      l.sections.forEach(function (sec, i) {
+        var tag = where + 'раздел ' + (i + 1);
+        r.ok(typeof sec.h === 'string' && sec.h.length > 5, tag + ': есть заголовок');
+        r.ok((sec.p || []).length >= 1, tag + ': есть текст');
+        (sec.p || []).forEach(function (para) {
+          if (para.length < 80) badCommands.push(tag + ': слишком короткий абзац');
+        });
+        (sec.cmds || []).forEach(function (pair) {
+          var first = String(pair[0]).replace(/^sudo\s+/, '').trim().split(/[\s|]/)[0];
+          if (first !== '!!' && !NET.commands.get(first)) {
+            badCommands.push(l.id + ': команда «' + first + '» не реализована в тренажёре');
+          }
+        });
+      });
+    });
+    r.ok(badCommands.length === 0, 'примеры в уроках ссылаются на существующие команды',
+      badCommands.slice(0, 3).join('; '));
+
+    /* прогресс чтения */
+    var readBefore = NET.progress.isLessonRead('lab01');
+    NET.progress.markLessonRead('lab01');
+    r.ok(NET.progress.isLessonRead('lab01'), 'урок отмечается прочитанным');
+    r.ok(NET.progress.lessonsRead().indexOf('lab01') >= 0, 'список прочитанного доступен');
+    if (!readBefore) delete NET.progress.get().lessons.lab01;
   }
 
   /* ---------- схема хранилища ---------- */

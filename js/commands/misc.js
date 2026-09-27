@@ -186,6 +186,64 @@
   function ui() { return NET.ui && NET.ui.labs ? NET.ui.labs : null; }
 
   reg({
+    name: 'lesson', aliases: ['theory'], category: 'trainer',
+    summary: 'теория: список уроков и чтение',
+    usage: 'lesson [list | ID | lab01 | linux-basics]',
+    complete: function (ctx, word, argv) {
+      return ['list'].concat(NET.lessons ? NET.lessons.ids() : []);
+    },
+    run: function (ctx) {
+      if (!NET.lessons) return ctx.fail('lesson: теория не загружена');
+      var arg = ctx.argv[0];
+
+      if (!arg || arg === 'list') {
+        ctx.line('Теоретическая часть. Урок открывается командой: lesson <id>');
+        ctx.line('');
+        NET.lessons.list().forEach(function (l) {
+          var read = NET.progress.isLessonRead(l.id) ? '✔' : ' ';
+          ctx.line(' ' + read + ' ' + U.padRight(l.id, 14) +
+            U.padRight('~' + l.minutes + ' мин', 9) + l.title);
+        });
+        ctx.line('');
+        ctx.line('Начните с linux-basics, если раньше не работали в консоли Linux.');
+        return 0;
+      }
+
+      var lesson = NET.lessons.get(arg) || NET.lessons.forLab(arg);
+      if (!lesson) return ctx.fail('lesson: нет урока «' + arg + '» (см. lesson list)');
+
+      /* В интерфейсе урок читается во вкладке «Теория» — там он свёрстан;
+         в терминале печатаем краткое содержание, чтобы не терять контекст. */
+      if (NET.ui && NET.ui.lesson && ctx.streaming) {
+        NET.ui.lesson.show(lesson.id);
+        ctx.line('Урок «' + lesson.title + '» открыт во вкладке «Теория» (Alt+3).');
+        ctx.line('Время чтения: ~' + lesson.minutes + ' мин. Разделы:');
+        lesson.sections.forEach(function (sec, i) { ctx.line('  ' + (i + 1) + '. ' + sec.h); });
+        return 0;
+      }
+
+      ctx.line('── ' + lesson.title);
+      ctx.line('');
+      ctx.line(lesson.lead);
+      lesson.sections.forEach(function (sec) {
+        ctx.line('');
+        ctx.line('## ' + sec.h);
+        (sec.p || []).forEach(function (para) { ctx.line(para); });
+        (sec.cmds || []).forEach(function (pair) {
+          ctx.line('    ' + U.padRight(pair[0], 44) + (pair[1] || ''));
+        });
+        if (sec.note) ctx.line('    ! ' + sec.note);
+      });
+      if (lesson.summary) {
+        ctx.line('');
+        ctx.line('## Коротко');
+        lesson.summary.forEach(function (t) { ctx.line('  · ' + t); });
+      }
+      return 0;
+    }
+  });
+
+  reg({
     name: 'check', category: 'trainer', summary: 'проверить решение текущей лаборатории',
     usage: 'check',
     run: function (ctx) {
