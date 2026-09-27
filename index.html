@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Linux Network Engineer Trainer</title>
+<meta name="description" content="Автономный офлайн-тренажёр сетевого инженера: виртуальная Ubuntu, реальная диагностика сети, лабораторные работы.">
+<!--
+  Политика безопасности контента.
+  script-src без 'unsafe-inline' и 'unsafe-eval': в приложении нет ни одного
+  встроенного скрипта и ни одного eval/new Function, поэтому даже строка вида
+  <img src=x onerror=...> из вывода команды не может выполниться.
+  connect-src 'none' закрывает fetch/XHR/WebSocket — гарантия автономности.
+  Источники перечислены и как 'self', и как file:, потому что при открытии
+  двойным кликом документ имеет file-origin, который браузеры трактуют по-разному.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data:; font-src 'self' file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/layout.css">
+<link rel="stylesheet" href="css/terminal.css">
+<link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="topbar">
+    <div class="brand">
+      <span class="logo">nx</span>
+      <span>Linux Network Engineer Trainer</span>
+      <small class="mono">offline</small>
+    </div>
+    <button class="btn small ghost" id="btn-toggle-left" title="Панель лабораторий">☰</button>
+    <select class="sel" id="mode-select" title="Режим обучения"></select>
+    <span class="chip hidden" id="lab-chip"></span>
+    <span class="chip hidden" id="timer-chip"></span>
+    <span class="topbar-spacer"></span>
+    <span class="chip" id="due-chip">к повторению: 0</span>
+    <span class="chip" id="streak-chip">🔥 0 дн.</span>
+    <span class="chip accent" id="level-chip">Beginner · 0%</span>
+    <select class="sel" id="host-select" title="Виртуальный хост (консоль)"></select>
+    <button class="btn small" id="btn-palette" title="Командная палитра (Ctrl+K)">⌘K</button>
+    <button class="btn small" id="btn-help" title="Горячие клавиши (?)">?</button>
+    <button class="btn small ghost" id="btn-toggle-right" title="Панель задания">▤</button>
+  </header>
+
+  <main id="layout">
+
+    <aside id="left">
+      <section class="pane">
+        <header>Режим<span class="count" id="mode-hint"></span></header>
+        <div class="body">
+          <div class="mode-grid" id="modes-grid"></div>
+          <div class="empty" id="mode-desc"></div>
+          <button class="btn small block" id="btn-random">Случайный инцидент</button>
+        </div>
+      </section>
+
+      <section class="pane scroll">
+        <header>Лаборатории<span class="count" id="labs-count">0/10</span></header>
+        <div class="body">
+          <div class="list" id="labs-list"></div>
+        </div>
+      </section>
+
+      <section class="pane scroll">
+        <header>Навыки<span class="count" id="skills-count"></span></header>
+        <div class="body">
+          <div class="task-meta" id="skills-summary"></div>
+          <div id="skills-list"></div>
+        </div>
+      </section>
+
+      <section class="pane scroll">
+        <header>К повторению<span class="count" id="srs-count">0</span></header>
+        <div class="body">
+          <div class="list" id="srs-list"></div>
+        </div>
+      </section>
+
+      <section class="pane">
+        <header>Профиль<span class="count" id="storage-chip"></span></header>
+        <div class="body">
+          <div class="task-meta">
+            <button class="btn small" id="btn-export">Экспорт</button>
+            <button class="btn small" id="btn-import">Импорт</button>
+            <button class="btn small ghost" id="btn-reset-progress">Сбросить</button>
+          </div>
+          <div class="empty">Прогресс хранится локально в браузере. Экспорт — страховка на случай очистки данных.</div>
+        </div>
+      </section>
+    </aside>
+
+    <section id="center">
+      <nav class="tabs" id="center-tabs">
+        <button data-tab="terminal" class="active">Терминал</button>
+        <button data-tab="topology">Топология</button>
+        <div class="tabs-right">
+          <button class="btn small" id="btn-topo-refresh" title="Перерисовать схему">⟳</button>
+        </div>
+      </nav>
+
+      <div class="tabpane active" id="tab-terminal">
+        <div id="terminal-wrap">
+          <div id="term-scroll">
+            <div id="term-out"></div>
+          </div>
+          <div id="term-input-row">
+            <span id="term-prompt" class="mono"></span>
+            <input id="term-input" type="text" spellcheck="false" autocomplete="off"
+                   autocapitalize="off" autocorrect="off" aria-label="Командная строка">
+          </div>
+          <div id="term-status">
+            <span id="term-status-text"></span>
+            <span class="spacer"></span>
+            <span id="term-status-exit" class="exit-ok">exit 0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-topology">
+        <div id="topo-wrap"></div>
+      </div>
+    </section>
+
+    <aside id="right">
+      <nav class="tabs" id="right-tabs">
+        <button data-tab="task" class="active">Задание</button>
+        <button data-tab="debrief">Разбор</button>
+        <button data-tab="history">История</button>
+        <div class="tabs-right">
+          <button class="btn small primary" id="btn-check" title="Ctrl+Enter">Проверить</button>
+          <button class="btn small" id="btn-hint" title="F2">Подсказка</button>
+          <button class="btn small ghost" id="btn-lab-reset" title="F5">Сброс</button>
+        </div>
+      </nav>
+      <div class="tabpane active" id="tab-task"></div>
+      <div class="tabpane" id="tab-debrief"></div>
+      <div class="tabpane" id="tab-history"></div>
+    </aside>
+
+  </main>
+</div>
+
+<div class="overlay hidden" id="pager">
+  <div class="overlay-box">
+    <header><span id="pager-title">less</span><span class="spacer"></span>
+      <span class="faint">Space/b — страница, j/k — строка, g/G — начало/конец, / — поиск, q — выход</span>
+      <button class="btn small" id="pager-close">Закрыть</button>
+    </header>
+    <div class="overlay-body" id="pager-body" tabindex="0"></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="editor">
+  <div class="overlay-box">
+    <header><span id="editor-title">файл</span><span class="spacer"></span>
+      <span class="faint">Ctrl+S — сохранить, Esc — выйти без сохранения</span>
+    </header>
+    <textarea id="editor-text" spellcheck="false"></textarea>
+    <footer>
+      <span class="faint">Отступы в YAML — только пробелы</span>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="editor-cancel">Отмена</button>
+      <button class="btn primary" id="editor-save">Сохранить</button>
+    </footer>
+  </div>
+</div>
+
+<div class="overlay hidden" id="palette">
+  <div class="overlay-box">
+    <input id="palette-input" type="text" placeholder="Лаборатория, режим, хост, man…" spellcheck="false" autocomplete="off">
+    <div class="results" id="palette-results"></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="help-overlay">
+  <div class="overlay-box">
+    <header><span>Горячие клавиши</span><span class="spacer"></span>
+      <button class="btn small" id="help-close">Закрыть</button>
+    </header>
+    <div class="overlay-body" id="help-body"></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<noscript>
+  <div class="noscript-warning">
+    Тренажёр целиком работает на JavaScript в вашем браузере (никакого сервера).
+    Включите JavaScript и обновите страницу.
+  </div>
+</noscript>
+
+<!-- ядро -->
+<script src="js/core/namespace.js"></script>
+<script src="js/core/eventbus.js"></script>
+<script src="js/core/util.js"></script>
+<script src="js/core/errors.js"></script>
+<script src="js/core/schema.js"></script>
+<script src="js/core/storage.js"></script>
+
+<!-- виртуальная машина и сеть -->
+<script src="js/vm/vfs.js"></script>
+<script src="js/vm/users.js"></script>
+<script src="js/vm/process.js"></script>
+<script src="js/vm/netstack.js"></script>
+<script src="js/vm/firewall.js"></script>
+<script src="js/vm/packet.js"></script>
+<script src="js/vm/dns.js"></script>
+<script src="js/vm/dhcp.js"></script>
+<script src="js/vm/services.js"></script>
+<script src="js/vm/capture.js"></script>
+<script src="js/vm/netcfg.js"></script>
+<script src="js/vm/machine.js"></script>
+<script src="js/vm/topology.js"></script>
+<script src="js/vm/world.js"></script>
+
+<!-- оболочка -->
+<script src="js/shell/lexer.js"></script>
+<script src="js/shell/parser.js"></script>
+<script src="js/shell/expand.js"></script>
+<script src="js/shell/history.js"></script>
+<script src="js/shell/executor.js"></script>
+<script src="js/shell/completion.js"></script>
+<script src="js/shell/man.js"></script>
+
+<!-- команды -->
+<script src="js/commands/registry.js"></script>
+<script src="js/commands/cmdlib.js"></script>
+<script src="js/commands/fs.js"></script>
+<script src="js/commands/text.js"></script>
+<script src="js/commands/sys.js"></script>
+<script src="js/commands/systemd.js"></script>
+<script src="js/commands/apt.js"></script>
+<script src="js/commands/net_ip.js"></script>
+<script src="js/commands/net_diag.js"></script>
+<script src="js/commands/net_dns.js"></script>
+<script src="js/commands/net_cfg.js"></script>
+<script src="js/commands/net_fw.js"></script>
+<script src="js/commands/net_capture.js"></script>
+<script src="js/commands/services_cmd.js"></script>
+<script src="js/commands/misc.js"></script>
+
+<!-- обучение -->
+<script src="js/learn/skills.js"></script>
+<script src="js/learn/progress.js"></script>
+<script src="js/learn/theory.js"></script>
+<script src="js/learn/srs.js"></script>
+<script src="js/learn/modes.js"></script>
+<script src="js/learn/debrief.js"></script>
+
+<!-- лаборатории -->
+<script src="js/labs/checks.js"></script>
+<script src="js/labs/engine.js"></script>
+<script src="js/labs/lab01.js"></script>
+<script src="js/labs/lab02.js"></script>
+<script src="js/labs/lab03.js"></script>
+<script src="js/labs/lab04.js"></script>
+<script src="js/labs/lab05.js"></script>
+<script src="js/labs/lab06.js"></script>
+<script src="js/labs/lab07.js"></script>
+<script src="js/labs/lab08.js"></script>
+<script src="js/labs/lab09.js"></script>
+<script src="js/labs/lab10.js"></script>
+<script src="js/labs/pool.js"></script>
+
+<!-- интерфейс -->
+<script src="js/ui/dom.js"></script>
+<script src="js/ui/notify.js"></script>
+<script src="js/ui/pager.js"></script>
+<script src="js/ui/terminal.js"></script>
+<script src="js/ui/panel_task.js"></script>
+<script src="js/ui/panel_labs.js"></script>
+<script src="js/ui/panel_progress.js"></script>
+<script src="js/ui/panel_debrief.js"></script>
+<script src="js/ui/panel_topology.js"></script>
+<script src="js/ui/panel_history.js"></script>
+<script src="js/ui/palette.js"></script>
+<script src="js/ui/shortcuts.js"></script>
+<script src="js/ui/app.js"></script>
+
+<!-- самопроверка движка -->
+<script src="js/dev/selftest.js"></script>
+</body>
+</html>
