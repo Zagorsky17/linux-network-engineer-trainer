@@ -68,6 +68,8 @@
       testLearn(r);
       testLimits(r);
       testLessons(r);
+      testMethod(r);
+      testQuiz(r);
       testSchema(r);
       testLabs(r);
     } catch (e) {
@@ -553,6 +555,15 @@
     r.eq(w.capture.query({ node: 'srv1', expr: 'port (' }), null, 'некорректный фильтр отвергается');
     var line = w.capture.format(icmp[0], {});
     r.ok(/ICMP/.test(line) && /\d{2}:\d{2}:\d{2}/.test(line), 'формат строки как у tcpdump');
+
+    /* tcpdump видит пакет до netfilter: отброшенный SYN есть в дампе сервера */
+    w.capture.clear();
+    w.get('srv1').fw.addRule('INPUT', { proto: 'tcp', dport: 443, target: 'DROP' }, {});
+    P.tcpConnect(w, w.get('app1'), '192.168.10.20', 443);
+    var dropped = w.capture.query({ node: 'srv1', expr: 'port 443' });
+    r.ok(dropped.some(function (p) { return p.flags === 'S' && p.src === '192.168.10.30'; }),
+      'входящий SYN виден в дампе сервера даже при DROP');
+    r.ok(!dropped.some(function (p) { return p.flags === 'S.'; }), 'при DROP сервер не отвечает SYN-ACK');
   }
 
   /* ---------- обучение ---------- */
@@ -688,6 +699,116 @@
     r.ok(NET.progress.isLessonRead('lab01'), 'урок отмечается прочитанным');
     r.ok(NET.progress.lessonsRead().indexOf('lab01') >= 0, 'список прочитанного доступен');
     if (!readBefore) delete NET.progress.get().lessons.lab01;
+  }
+
+  /* ---------- методическая часть уроков ---------- */
+
+  function firstWord(cmd) {
+    return String(cmd).replace(/^sudo\s+/, '').trim().split(/[\s|]/)[0];
+  }
+
+  function testMethod(r) {
+    r.section('method: алгоритм, сценарии, практика, вопросы');
+    var U = NET.method.universal;
+    r.ok(U.steps.length >= 8, 'универсальный алгоритм: не меньше 8 шагов', String(U.steps.length));
+    r.ok(U.steps.every(function (st) { return st.layer && st.q && st.cmds.length && st.pass && st.fail; }),
+      'у каждого шага алгоритма есть вопрос, команды и оба исхода');
+    r.ok(U.symptoms.length >= 8 && U.symptoms.every(function (row) { return row.length === 3; }),
+      'словарь симптомов: сообщение → причина → проверка');
+
+    var missing = [];
+    NET.labs.list().forEach(function (lab) {
+      var lesson = NET.lessons.forLab(lab.id);
+      if (!lesson || !NET.method.get(lesson.id)) missing.push(lab.id);
+    });
+    r.ok(missing.length === 0, 'у каждой лабораторной есть методическая часть', missing.join(', '));
+
+    var bad = [];
+    NET.method.ids().forEach(function (id) {
+      var m = NET.method.get(id);
+      var where = id + ': ';
+      if (!NET.lessons.get(id)) bad.push(where + 'нет урока');
+      if (!(m.minutes > 0 && m.minutes < 30)) bad.push(where + 'время чтения');
+
+      if (m.commands.length < 5) bad.push(where + 'меньше 5 команд в разборе');
+      m.commands.forEach(function (c) {
+        if (!c.shows || !c.why || !(c.read && c.read.length >= 1)) bad.push(where + c.cmd + ': нет «что/зачем/как читать»');
+        var w = firstWord(c.cmd);
+        if (!NET.commands.get(w)) bad.push(where + 'команда «' + w + '» не реализована');
+      });
+
+      var sc = m.scenario;
+      if (!sc || !sc.symptom || sc.hypotheses.length < 2 || sc.checks.length < 2 || !sc.localize ||
+        !sc.fix.length || !sc.verify.length || !sc.transfer) {
+        bad.push(where + 'сценарий неполон (симптом → гипотезы → проверки → локализация → исправление → проверка)');
+      } else {
+        sc.checks.forEach(function (row) { if (row.length !== 3) bad.push(where + 'проверка сценария не из трёх частей'); });
+      }
+
+      if (m.practice.length < 4) bad.push(where + 'меньше 4 шагов практики');
+      m.practice.forEach(function (st, i) {
+        if (!st.expect || !st.ask) bad.push(where + 'практика ' + (i + 1) + ': нет ожидаемого результата или вопроса');
+        if (st.sees === undefined && st.absent === undefined) bad.push(where + 'практика ' + (i + 1) + ': нечем сверить вывод');
+        var w = firstWord(st.cmd);
+        if (!NET.commands.get(w)) bad.push(where + 'практика: команда «' + w + '» не реализована');
+      });
+      if (!m.solution || !m.solution.steps.length || !m.solution.verify.length) bad.push(where + 'нет решения или его проверки');
+
+      if (m.checklist.length < 5) bad.push(where + 'чек-лист короче 5 пунктов');
+      if (m.questions.length < 4) bad.push(where + 'меньше 4 контрольных вопросов');
+      m.questions.forEach(function (qa) { if (!qa.q || !qa.a || qa.a.length < 40) bad.push(where + 'вопрос без содержательного ответа'); });
+    });
+    r.ok(bad.length === 0, 'структура методической части корректна', bad.slice(0, 4).join('; '));
+  }
+
+  /* ---------- тесты по командам ---------- */
+
+  function testQuiz(r) {
+    r.section('quiz: тесты по командам');
+    var missing = NET.lessons.ids().filter(function (id) { return !NET.quiz.has(id); });
+    r.ok(missing.length === 0, 'тест есть у каждого урока', missing.join(', '));
+
+    var bad = [];
+    NET.quiz.ids().forEach(function (id) {
+      var qz = NET.quiz.get(id);
+      if (!NET.lessons.get(id)) bad.push(id + ': нет урока');
+      if (qz.questions.length < 8) bad.push(id + ': меньше 8 вопросов');
+      var seen = {};
+      qz.questions.forEach(function (q, i) {
+        var tag = id + ' #' + (i + 1) + ': ';
+        if (seen[q.q]) bad.push(tag + 'повтор вопроса');
+        seen[q.q] = true;
+        if (!(q.options.length >= 3 && q.options.length <= 5)) bad.push(tag + 'вариантов не 3–5');
+        var uniq = {};
+        q.options.forEach(function (o) { uniq[o] = true; });
+        if (Object.keys(uniq).length !== q.options.length) bad.push(tag + 'одинаковые варианты');
+        if (!(q.answer >= 0 && q.answer < q.options.length)) bad.push(tag + 'индекс ответа вне диапазона');
+        if (!q.explain || q.explain.length < 20) bad.push(tag + 'нет объяснения');
+        if (!NET.commands.get(firstWord(q.cmd))) bad.push(tag + 'команда «' + q.cmd + '» не реализована');
+      });
+    });
+    r.ok(bad.length === 0, 'вопросы тестов корректны', bad.slice(0, 4).join('; '));
+
+    var qz = NET.quiz.get('lab01');
+    var all = qz.questions.map(function (q) { return q.answer; });
+    var full = NET.quiz.grade('lab01', all);
+    r.ok(full.percent === 100 && full.passed && full.wrong.length === 0, 'все верные ответы — 100% и зачёт');
+    var none = NET.quiz.grade('lab01', qz.questions.map(function () { return null; }));
+    r.ok(none.percent === 0 && !none.passed && none.wrong.length === qz.questions.length, 'без ответов — 0%');
+    r.ok(NET.quiz.grade('нет-такого', []) === null, 'несуществующий тест — null');
+
+    var before = NET.progress.quizResult('lab01');
+    NET.progress.recordQuiz('lab01', 50);
+    NET.progress.recordQuiz('lab01', 88);
+    NET.progress.recordQuiz('lab01', 25);
+    var res = NET.progress.quizResult('lab01');
+    r.ok(res && res.best === 88 && res.tries >= 3, 'сохраняется лучший результат и число попыток');
+    NET.progress.recordQuiz('lab01', 'abc');
+    r.ok(NET.progress.quizResult('lab01').best === 88, 'мусорный процент не портит результат');
+    if (!before) {
+      var rec = NET.progress.get().lessons.lab01;
+      delete rec.quizBest; delete rec.quizTries; delete rec.quizAt;
+    }
   }
 
   /* ---------- схема хранилища ---------- */

@@ -225,6 +225,18 @@
         result.error = E.TIMEOUT; result.lost = true; result.rtt = latency * 2; return result;
       }
 
+      /*
+       * Приём на входном интерфейсе. tcpdump видит пакет раньше netfilter,
+       * поэтому запись делается до проверки INPUT/FORWARD: SYN, отброшенный
+       * правилом DROP, всё равно виден в дампе на сервере — это и есть
+       * главный признак фильтрации на самом хосте.
+       */
+      rec(world, next, inIface, {
+        src: pkt.src, dst: pkt.dst, proto: pkt.proto, sport: pkt.sport, dport: pkt.dport,
+        len: pkt.len, flags: pkt.flags, ttl: pkt.ttl,
+        srcMac: iface.mac, dstMac: inIface.mac
+      });
+
       /* 5. пакет пришёл адресату? */
       if (next.net.ownsIP(pkt.dst)) {
         var dr = localDeliver(world, next, inIface, pkt);

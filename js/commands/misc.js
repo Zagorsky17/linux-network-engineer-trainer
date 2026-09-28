@@ -244,6 +244,55 @@
   });
 
   reg({
+    name: 'quiz', aliases: ['test-commands'], category: 'trainer',
+    summary: 'тест по командам урока',
+    usage: 'quiz [list | lab01 | linux-basics]',
+    complete: function () {
+      return ['list'].concat(NET.quiz ? NET.quiz.ids() : []);
+    },
+    run: function (ctx) {
+      if (!NET.quiz) return ctx.fail('quiz: тесты не загружены');
+      var arg = ctx.argv[0];
+
+      if (!arg || arg === 'list') {
+        ctx.line('Тесты по командам. Открыть тест: quiz <id>');
+        ctx.line('');
+        NET.quiz.ids().forEach(function (id) {
+          var qz = NET.quiz.get(id);
+          var res = NET.progress.quizResult(id);
+          ctx.line('  ' + U.padRight(id, 14) + U.padRight(qz.questions.length + ' вопр.', 10) +
+            U.padRight(res ? 'лучший ' + res.best + '%' : '—', 13) + qz.title);
+        });
+        ctx.line('');
+        ctx.line('Зачёт — от ' + NET.quiz.PASS_PERCENT + '% верных ответов.');
+        return 0;
+      }
+
+      var lesson = NET.lessons.get(arg) || NET.lessons.forLab(arg);
+      var id = lesson ? lesson.id : arg;
+      if (!NET.quiz.has(id)) return ctx.fail('quiz: нет теста «' + arg + '» (см. quiz list)');
+
+      if (NET.ui && NET.ui.quiz && ctx.streaming) {
+        var qz = NET.ui.quiz.show(id);
+        ctx.line('Тест «' + qz.title + '» открыт во вкладке «Теория» (Alt+3): ' +
+          qz.questions.length + ' вопросов, зачёт от ' + qz.passPercent + '%.');
+        return 0;
+      }
+
+      /* Без интерфейса — только вопросы: отвечать удобнее во вкладке. */
+      var quiz = NET.quiz.get(id);
+      ctx.line('── Тест по командам: ' + quiz.title);
+      quiz.questions.forEach(function (q, i) {
+        ctx.line('');
+        ctx.line((i + 1) + '. ' + q.q);
+        var opts = q.options.slice().sort(function () { return Math.random() - 0.5; });
+        opts.forEach(function (o, j) { ctx.line('   ' + String.fromCharCode(97 + j) + ') ' + o); });
+      });
+      return 0;
+    }
+  });
+
+  reg({
     name: 'check', category: 'trainer', summary: 'проверить решение текущей лаборатории',
     usage: 'check',
     run: function (ctx) {

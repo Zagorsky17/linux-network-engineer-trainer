@@ -174,7 +174,10 @@
           solved: num(0, 0, 1e5), failed: num(0, 0, 1e5), lastAt: num(0, 0, 1e15)
         }), 500),
         skills: map(skillStat, 60),
-        lessons: map(obj({ readAt: num(0, 0, 1e15), times: num(0, 0, 1e5) }), 100),
+        lessons: map(obj({
+          readAt: num(0, 0, 1e15), times: num(0, 0, 1e5),
+          quizBest: num(0, 0, 100), quizTries: num(0, 0, 1e5), quizAt: num(0, 0, 1e15)
+        }), 100),
         totals: obj({
           labsSolved: num(0, 0, 1e6), tasksSolved: num(0, 0, 1e6),
           commands: num(0, 0, 1e8), seconds: num(0, 0, 1e9), hints: num(0, 0, 1e6)
