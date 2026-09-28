@@ -30,13 +30,16 @@
     });
   };
 
-  C.tcpOpen = function (from, ip, port, label) {
-    return mk((label || 'TCP') + ' ' + from + ' → ' + ip + ':' + port, function (world) {
-      var m = world.get(from);
-      if (!m) return { ok: false, detail: 'нет хоста ' + from };
-      var r = P.tcpConnect(world, m, ip, port, {});
-      return { ok: !!r.ok, detail: r.ok ? null : describe(r) };
-    });
+  /* opts.srcIP — с какого адреса подключаться (у нарушителя их несколько). */
+  C.tcpOpen = function (from, ip, port, label, opts) {
+    opts = opts || {};
+    return mk((label || 'TCP') + ' ' + from + (opts.srcIP ? ' (' + opts.srcIP + ')' : '') + ' → ' + ip + ':' + port,
+      function (world) {
+        var m = world.get(from);
+        if (!m) return { ok: false, detail: 'нет хоста ' + from };
+        var r = P.tcpConnect(world, m, ip, port, { srcIP: opts.srcIP });
+        return { ok: !!r.ok, detail: r.ok ? null : describe(r) };
+      });
   };
 
   /* Соединение по имени — как у приложения: системный резолвер (/etc/hosts, DNS), затем TCP. */
@@ -208,6 +211,170 @@
     return mk(title || ('Использована команда ' + re), function (world, engine) {
       var used = (engine && engine.commands() || []).some(function (c) { return re.test(c.line); });
       return { ok: used, detail: used ? null : 'команда не выполнялась' };
+    });
+  };
+
+  /* ---------- раздел «Безопасность» ---------- */
+
+  /* Соединение не должно устанавливаться: порт закрыт для этого источника. */
+  C.tcpClosed = function (from, ip, port, label, opts) {
+    opts = opts || {};
+    return mk((label || 'Закрыто') + ': ' + from + (opts.srcIP ? ' (' + opts.srcIP + ')' : '') + ' → ' + ip + ':' + port,
+      function (world) {
+        var m = world.get(from);
+        if (!m) return { ok: false, detail: 'нет хоста ' + from };
+        var r = P.tcpConnect(world, m, ip, port, { srcIP: opts.srcIP });
+        return { ok: !r.ok, detail: r.ok ? 'соединение проходит, а не должно' : null };
+      });
+  };
+
+  C.serviceEnabled = function (host, unit) {
+    return mk('Сервис ' + unit + ' в автозапуске на ' + host, function (world) {
+      var m = world.get(host);
+      var u = m && m.services.get(unit);
+      if (!u) return { ok: false, detail: 'юнит не найден' };
+      if (u.state !== 'active') return { ok: false, detail: 'сейчас ' + u.state };
+      return { ok: !!u.enabled, detail: u.enabled ? null : 'не включён (systemctl enable)' };
+    });
+  };
+
+  /* Действующий параметр sshd: учитывает Include и требует перезапуска службы. */
+  C.sshdOption = function (host, key, expect) {
+    return mk('sshd на ' + host + ': ' + key + ' = ' + expect, function (world) {
+      var m = world.get(host);
+      if (!m || !m.sshdConfig) return { ok: false, detail: 'нет хоста' };
+      var cur = m.sshdConfig()[String(key).toLowerCase()];
+      if (cur === undefined) return { ok: false, detail: 'параметр не задан' };
+      if (String(cur).toLowerCase() !== String(expect).toLowerCase()) {
+        return { ok: false, detail: 'сейчас ' + cur };
+      }
+      var file = m.sshdFileConfig()[String(key).toLowerCase()];
+      if (String(file === undefined ? '' : file).toLowerCase() !== String(expect).toLowerCase()) {
+        return { ok: false, detail: 'применено, но в файле другое значение — вернётся после перезагрузки' };
+      }
+      return { ok: true };
+    });
+  };
+
+  C.sysctlIs = function (host, key, expect) {
+    return mk('Параметр ядра ' + key + ' = ' + expect + ' на ' + host, function (world) {
+      var m = world.get(host);
+      var cur = m && m.net.sysctl[key];
+      if (cur === undefined) return { ok: false, detail: 'параметр неизвестен' };
+      return { ok: String(cur) === String(expect), detail: String(cur) === String(expect) ? null : 'сейчас ' + cur };
+    });
+  };
+
+  C.ufwActive = function (host, incoming) {
+    return mk('ufw на ' + host + ' включён' + (incoming ? ', политика ' + incoming : ''), function (world) {
+      var m = world.get(host);
+      if (!m.fw.ufw.enabled) return { ok: false, detail: 'Status: inactive' };
+      if (incoming && m.fw.ufw.defaults.incoming !== incoming) {
+        return { ok: false, detail: 'политика incoming: ' + m.fw.ufw.defaults.incoming };
+      }
+      if (!m.services.isEnabled('ufw')) return { ok: false, detail: 'юнит ufw не в автозапуске' };
+      return { ok: true };
+    });
+  };
+
+  C.ipBanned = function (host, ip) {
+    return mk('Адрес ' + ip + ' заблокирован на ' + host, function (world) {
+      var m = world.get(host);
+      var blocked = m.fw.evaluate('INPUT', {
+        proto: 'tcp', src: ip, dst: m.net.primaryIP(), dport: 22, ct: 'NEW', inIface: 'ens33', dry: true
+      });
+      return { ok: blocked !== 'ACCEPT', detail: blocked === 'ACCEPT' ? 'пакеты с него по-прежнему принимаются' : null };
+    });
+  };
+
+  /* Файл отсутствует (удалённый бэкдор, лишняя задача cron, дамп в веб-корне). */
+  C.fileAbsent = function (host, path, label) {
+    return mk((label || 'Файла нет') + ': ' + host + ':' + path, function (world) {
+      var m = world.get(host);
+      var exists = m.vfs.exists(path, NET.ROOTCTX);
+      return { ok: !exists, detail: exists ? 'файл всё ещё на месте' : null };
+    });
+  };
+
+  /* Содержимое файла (не) содержит строку. */
+  C.fileHas = function (host, path, text, opts) {
+    opts = opts || {};
+    var want = opts.absent ? 'не содержит' : 'содержит';
+    return mk('Файл ' + path + ' на ' + host + ' ' + want + ' «' + text + '»', function (world) {
+      var m = world.get(host);
+      if (!m.vfs.exists(path, NET.ROOTCTX)) {
+        return { ok: !!opts.absent, detail: opts.absent ? null : 'файла нет' };
+      }
+      var data = m.vfs.read(path, NET.ROOTCTX);
+      var found = data.indexOf(text) >= 0;
+      return { ok: opts.absent ? !found : found, detail: (opts.absent ? found : !found) ? 'проверьте содержимое файла' : null };
+    });
+  };
+
+  /* Права файла не шире максимальных (0o640 и т. п.). */
+  C.modeAtMost = function (host, path, maxMode) {
+    return mk('Права ' + path + ' на ' + host + ' не шире ' + maxMode.toString(8), function (world) {
+      var m = world.get(host);
+      var n = m.vfs.get(path, NET.ROOTCTX);
+      if (!n) return { ok: true, detail: null };
+      var cur = (n.mode || 0) & 0o7777;
+      var extra = cur & ~maxMode;
+      return { ok: extra === 0, detail: extra ? 'сейчас ' + cur.toString(8) : null };
+    });
+  };
+
+  /* HTTP-ответ сервера на путь: статус должен совпасть с ожидаемым. */
+  C.httpStatus = function (from, ip, port, path, expect, label) {
+    return mk((label || 'HTTP') + ' ' + path + ' → ' + expect, function (world) {
+      var m = world.get(from);
+      var r = NET.httpd.request(world, m, ip, port, path, { srcIP: (m.net.allAddrs(4)[0] || {}).ip });
+      if (!r.ok) {
+        var closed = [403, 404, 'closed'].indexOf(expect) >= 0;
+        return { ok: closed, detail: closed ? null : 'соединение не установилось: ' + describe(r) };
+      }
+      if (expect === 'closed') return { ok: false, detail: 'сервер ответил ' + r.status + ', соединение открыто' };
+      return { ok: r.status === expect, detail: r.status === expect ? null : 'ответ ' + r.status };
+    });
+  };
+
+  /* Нет посторонних пользователей с uid 0 (кроме root). */
+  C.noExtraRootUsers = function (host) {
+    return mk('На ' + host + ' нет посторонних учётных записей с uid 0', function (world) {
+      var m = world.get(host);
+      var extra = m.users.users.filter(function (u) { return u.uid === 0 && u.name !== 'root'; });
+      return { ok: !extra.length, detail: extra.length ? 'найдены: ' + extra.map(function (u) { return u.name; }).join(', ') : null };
+    });
+  };
+
+  C.userAbsent = function (host, name) {
+    return mk('Учётной записи ' + name + ' на ' + host + ' нет', function (world) {
+      var m = world.get(host);
+      var u = m.users.byName(name);
+      if (!u) return { ok: true };
+      var blocked = /nologin|false/.test(u.shell) && m.users.groupNamesOf(name).indexOf('sudo') < 0;
+      return { ok: false, detail: blocked ? 'учётка осталась (вход закрыт, но её быть не должно)' : 'учётка активна' };
+    });
+  };
+
+  /* Ни одного SUID-файла вне эталонного списка системы. */
+  C.noExtraSuid = function (host, baseline) {
+    return mk('На ' + host + ' нет посторонних SUID-файлов', function (world) {
+      var m = world.get(host);
+      var found = [];
+      m.vfs.walkTree('/', NET.ROOTCTX, function (path, node) {
+        if (node.type !== 'file') return;
+        if ((node.mode & 0o4000) && baseline.indexOf(path) < 0) found.push(path);
+      });
+      return { ok: !found.length, detail: found.length ? 'найдены: ' + found.slice(0, 3).join(', ') : null };
+    });
+  };
+
+  /* Никто не слушает порт (бэкдор снят вместе с процессом). */
+  C.portClosed = function (host, port, proto) {
+    return mk('На ' + host + ' никто не слушает ' + (proto || 'tcp') + '/' + port, function (world) {
+      var m = world.get(host);
+      var s = m.net.listening(port, proto || 'tcp');
+      return { ok: !s, detail: s ? 'слушает ' + (s.process || '?') + ' на ' + s.addr : null };
     });
   };
 

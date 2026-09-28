@@ -105,18 +105,31 @@
     var cur = NET.labs.current();
     var solvedCount = 0;
 
-    NET.labs.list().forEach(function (lab) {
-      var solved = NET.progress.isLabSolved(lab.id);
-      if (solved) solvedCount++;
-      var row = h('div', 'row' + (cur && cur.lab.id === lab.id ? ' active' : ''));
-      row.title = lab.title + ' — сложность ' + lab.difficulty;
-      row.appendChild(h('span', solved ? 'done' : 'faint', solved ? '✔' : '·'));
-      var t = h('span', 't');
-      t.textContent = lab.id.toUpperCase() + ' ' + lab.title;
-      row.appendChild(t);
-      row.appendChild(h('span', 'stars', '★'.repeat(lab.difficulty)));
-      row.addEventListener('click', function () { ctl.start(lab.id); });
-      box.appendChild(row);
+    /* Два раздела: диагностика и безопасность. Заголовок печатается,
+       только если в разделе есть задачи, — порядок задаёт NET.labs.tracks. */
+    NET.labs.tracks.forEach(function (track) {
+      var inTrack = NET.labs.byTrack(track.id);
+      if (!inTrack.length) return;
+      var solvedHere = inTrack.filter(function (l) { return NET.progress.isLabSolved(l.id); }).length;
+      var head = h('div', 'list-group');
+      head.appendChild(h('span', 't', track.title));
+      head.appendChild(h('span', 'count', solvedHere + '/' + inTrack.length));
+      head.title = track.desc;
+      box.appendChild(head);
+
+      inTrack.forEach(function (lab) {
+        var solved = NET.progress.isLabSolved(lab.id);
+        if (solved) solvedCount++;
+        var row = h('div', 'row' + (cur && cur.lab.id === lab.id ? ' active' : ''));
+        row.title = lab.title + ' — сложность ' + lab.difficulty;
+        row.appendChild(h('span', solved ? 'done' : 'faint', solved ? '✔' : '·'));
+        var t = h('span', 't');
+        t.textContent = lab.id.toUpperCase() + ' ' + lab.title;
+        row.appendChild(t);
+        row.appendChild(h('span', 'stars', '★'.repeat(lab.difficulty)));
+        row.addEventListener('click', function () { ctl.start(lab.id); });
+        box.appendChild(row);
+      });
     });
 
     var counter = document.getElementById('labs-count');

@@ -148,8 +148,13 @@
       var unit = p.opts.u || p.opts.unit;
       if (unit) {
         var name = m.services.normalize(unit);
-        list = list.filter(function (l) { return l.unit === name || l.unit === unit; });
+        /* -u ssh показывает и записи процесса sshd: в systemd это один юнит */
+        var also = { ssh: ['sshd'], named: ['bind9'], fail2ban: ['fail2ban.server', 'fail2ban.filter', 'fail2ban.actions', 'fail2ban.jail'] }[name] || [];
+        list = list.filter(function (l) {
+          return l.unit === name || l.unit === unit || also.indexOf(l.unit) >= 0;
+        });
       }
+      if (p.flags.k) list = list.filter(function (l) { return l.unit === 'kernel'; });
       var prio = p.opts.p || p.opts.priority;
       if (prio) {
         var order = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'];

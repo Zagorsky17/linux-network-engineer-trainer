@@ -81,6 +81,9 @@
 
     var i = this.list.indexOf(p);
     this.list.splice(i, 1);
+    /* сокеты умирают вместе с процессом: ss перестаёт их показывать */
+    var net = this.machine.net;
+    if (net && net.sockets) net.sockets = net.sockets.filter(function (s) { return s.pid !== p.pid; });
     if (p.unit && this.machine.services) {
       var crashed = (signal === 'KILL' || signal === '9');
       this.machine.services.processDied(p.unit, crashed);

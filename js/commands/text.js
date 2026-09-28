@@ -76,6 +76,17 @@
           if (!hit) return;
           var prefix = showFile ? label + ':' : '';
           if (p.flags.n) prefix += (idx + 1) + ':';
+          /* -o печатает только совпавшие части, каждую отдельной строкой */
+          if (p.flags.o && !p.flags.v) {
+            var go = C.regex(ctx, 'grep', src, flags + 'g');
+            if (!go) return;
+            var mm;
+            while ((mm = go.exec(l)) !== null) {
+              results.push(prefix + mm[0]);
+              if (mm[0] === '') go.lastIndex++;
+            }
+            return;
+          }
           results.push(prefix + l);
         });
       }
@@ -482,7 +493,14 @@
         var reFlags = (sm[4].indexOf('g') >= 0 ? 'g' : '') + (sm[4].indexOf('i') >= 0 ? 'i' : '');
         var re = C.regex(ctx, 'sed', sm[2], reFlags);
         if (!re) return 1;
-        arr.forEach(function (l) { out.push(l.replace(re, sm[3])); });
+        /* как GNU sed: в замене \n и \t дают перевод строки и табуляцию,
+           \\ — один обратный слэш, перед остальными символами слэш просто снимается */
+        var repl = sm[3].replace(/\\([\s\S])/g, function (all, ch) {
+          if (ch === 'n') return '\n';
+          if (ch === 't') return '\t';
+          return ch === '\\' ? '\\' : ch;
+        });
+        arr.forEach(function (l) { out.push(l.replace(re, repl)); });
       } else if (/^\/(.*)\/d$/.test(script)) {
         var dre = C.regex(ctx, 'sed', script.match(/^\/(.*)\/d$/)[1]);
         if (!dre) return 1;

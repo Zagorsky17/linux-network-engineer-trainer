@@ -443,6 +443,13 @@
       var bits = (n.mode >> ((2 - i) * 3)) & 7;
       rwx[i] = ((bits & 4) ? 'r' : '-') + ((bits & 2) ? 'w' : '-') + ((bits & 1) ? 'x' : '-');
     }
+    /* setuid / setgid / sticky: s/S и t/T на месте x */
+    var special = [[0o4000, 0, 's'], [0o2000, 1, 's'], [0o1000, 2, 't']];
+    special.forEach(function (sp) {
+      if (!(n.mode & sp[0])) return;
+      var x = rwx[sp[1]].charAt(2) === 'x';
+      rwx[sp[1]] = rwx[sp[1]].slice(0, 2) + (x ? sp[2] : sp[2].toUpperCase());
+    });
     return t + rwx.join('');
   };
 

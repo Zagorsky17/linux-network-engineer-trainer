@@ -49,7 +49,11 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   ok(!!NET.world, 'мир создан при загрузке');
   ok(text('term-out').indexOf('Linux Network Engineer Trainer') >= 0, 'баннер напечатан в терминале');
   ok(text('term-prompt').indexOf('user@ubuntu') >= 0, 'prompt отрисован', text('term-prompt'));
-  ok($('labs-list').childNodes.length === NET.labs.list().length, 'в списке все ' + NET.labs.list().length + ' лабораторий', String($('labs-list').childNodes.length));
+  const labRows = $('labs-list').childNodes.filter(n => n.className && n.className.indexOf('row') >= 0);
+  const groupRows = $('labs-list').childNodes.filter(n => n.className === 'list-group');
+  ok(labRows.length === NET.labs.list().length, 'в списке все ' + NET.labs.list().length + ' лабораторий', String(labRows.length));
+  ok(groupRows.length === NET.labs.tracks.filter(t => NET.labs.byTrack(t.id).length).length,
+    'лаборатории разбиты по разделам курса', String(groupRows.length));
   ok($('modes-grid').childNodes.length === 6, 'в панели 6 режимов');
   ok($('skills-list').childNodes.length === 13, 'в панели 13 навыков');
   ok(text('level-chip').indexOf('Beginner') >= 0, 'уровень Beginner на старте', text('level-chip'));
@@ -78,7 +82,7 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   inp.value = '';
 
   /* запуск лаборатории кликом по строке */
-  $('labs-list').childNodes[0].dispatch('click');
+  $('labs-list').childNodes.filter(n => n.className && n.className.indexOf('row') >= 0)[0].dispatch('click');
   ok(!!NET.labs.current(), 'клик по лаборатории запускает её');
   ok(text('tab-task').indexOf('LAB01') >= 0, 'панель задания показывает лабораторию');
   ok(text('lab-chip').indexOf('LAB01') >= 0, 'чип лаборатории в топбаре');
@@ -103,7 +107,8 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   ok(text('tab-debrief').indexOf('Команды, которые решают задачу') >= 0, 'в разборе есть команды');
   ok($('tab-debrief').classList.contains('active'), 'вкладка разбора активирована автоматически');
   ok(text('level-chip').indexOf('%') >= 0, 'уровень пересчитан после решения');
-  ok($('labs-list').childNodes[0].textContent.indexOf('✔') >= 0, 'лаборатория отмечена решённой');
+  ok($('labs-list').childNodes.filter(n => n.className && n.className.indexOf('row') >= 0)[0]
+    .textContent.indexOf('✔') >= 0, 'лаборатория отмечена решённой');
 
   /* история */
   NET.ui.app.switchRightTab('history');

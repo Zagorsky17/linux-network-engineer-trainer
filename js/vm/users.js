@@ -41,6 +41,32 @@
     return u;
   };
 
+  UserDB.prototype.delUser = function (name) {
+    var u = this.byName(name);
+    if (!u) return { err: 'user \'' + name + '\' does not exist' };
+    if (u.uid === 0 && u.name === 'root') return { err: 'cannot remove user \'root\'' };
+    this.users.splice(this.users.indexOf(u), 1);
+    this.groups.forEach(function (g) {
+      var i = g.members.indexOf(name);
+      if (i >= 0) g.members.splice(i, 1);
+    });
+    /* собственная группа пользователя удаляется вместе с ним, если она пуста */
+    var own = this.groupByGid(u.gid);
+    if (own && own.name === name && !own.members.length) {
+      this.groups.splice(this.groups.indexOf(own), 1);
+    }
+    return { ok: true, user: u };
+  };
+
+  UserDB.prototype.delGroup = function (name) {
+    var g = this.groupByName(name);
+    if (!g) return { err: 'group \'' + name + '\' does not exist' };
+    var primary = this.users.some(function (u) { return u.gid === g.gid; });
+    if (primary) return { err: 'cannot remove the primary group of user' };
+    this.groups.splice(this.groups.indexOf(g), 1);
+    return { ok: true };
+  };
+
   UserDB.prototype.byName = function (name) {
     for (var i = 0; i < this.users.length; i++) if (this.users[i].name === name) return this.users[i];
     return null;

@@ -46,6 +46,38 @@
       logs: spec.logs || [],
       static: !!spec.static
     };
+    /*
+     * bindFrom: {file, re} — адреса прослушивания берутся из конфигурации службы
+     * (bind у Redis, bind-address у MySQL). re — выражение с группой адресов;
+     * несколько адресов через пробел. Нет совпадения — 0.0.0.0.
+     */
+    if (spec.bindFrom) {
+      var basePorts = U.clone(u.ports), bind = spec.bindFrom, orig = u.onStart;
+      u.onStart = function (m, unit) {
+        var text = NET.errors.attempt('services.bindFrom:' + unit.name, function () {
+          return m.vfs.exists(bind.file, NET.ROOTCTX) ? m.vfs.read(bind.file, NET.ROOTCTX) : '';
+        }, '', { silent: true, level: 'warn' });
+        var addrs = [];
+        String(text).split('\n').forEach(function (line) {
+          if (/^\s*[#;]/.test(line)) return;
+          var mm = line.match(bind.re);
+          if (mm && !addrs.length) {
+            addrs = mm[1].trim().split(/\s+/).filter(function (a) { return U.isIPv4(a); });
+          }
+        });
+        if (!addrs.length) addrs = ['0.0.0.0'];
+        m.net.closeUnitSockets(unit.name);
+        unit.ports = [];
+        basePorts.forEach(function (p) {
+          addrs.forEach(function (a) {
+            m.net.listen({ proto: p.proto, addr: a, port: p.port, pid: unit.pid,
+              process: unit.exec.split('/').pop().split(' ')[0], unit: unit.name });
+            unit.ports.push({ proto: p.proto, port: p.port, addr: a });
+          });
+        });
+        if (orig) orig(m, unit);
+      };
+    }
     this.units[u.name] = u;
     this.order.push(u.name);
     if (u.state === 'active') this._bringUp(u, true);

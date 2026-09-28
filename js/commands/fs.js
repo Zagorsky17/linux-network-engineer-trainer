@@ -108,7 +108,13 @@
     if (p.flags.l || p.flags.long) {
       var total = 0;
       entries.forEach(function (e) { total += Math.ceil(vfs.size(e.node) / 1024) * 4 || 4; });
-      if (entries.length && entries[0].name !== ctx.argv[0]) ctx.line('total ' + total);
+      /* ls -l ФАЙЛ (или ls -ld КАТАЛОГ) — строка «total» не печатается */
+      var single = entries.length === 1 && (entries[0].node.type !== 'dir' || p.flags.d) &&
+        ctx.argv.some(function (a) {
+          return a === entries[0].name || a.replace(/\/$/, '').split('/').pop() === entries[0].name ||
+            a.replace(/\/$/, '') === entries[0].path;
+        });
+      if (entries.length && !single) ctx.line('total ' + total);
       entries.forEach(function (e) {
         var n = e.node;
         var owner = ctx.machine.users.byUid(n.uid);
@@ -401,7 +407,7 @@
 
   reg({
     name: 'find', category: 'fs', summary: 'поиск файлов',
-    usage: 'find [PATH] [-name PATTERN] [-type f|d] [-mmin -N] [-size +N]',
+    usage: 'find [PATH] [-name PATTERN] [-type f|d] [-mmin -N] [-size +N] [-perm -4000] [-user NAME]',
     complete: pathComplete,
     run: function (ctx) {
       var args = ctx.argv.slice();
@@ -438,6 +444,37 @@
             var s = ctx.vfs.size(n);
             return bigger ? s > bytes : s < bytes;
           });
+        } else if (a === '-perm') {
+          /* -perm -4000 (все биты), /o+w или /0002 (любой бит), 644 (точно) */
+          var pv = args[++i] || '';
+          var pmode = pv[0] === '-' ? 'all' : (pv[0] === '/' ? 'any' : 'exact');
+          var body = pmode === 'exact' ? pv : pv.slice(1);
+          var bits;
+          if (/^[0-7]{1,4}$/.test(body)) bits = parseInt(body, 8);
+          else {
+            var sm = body.match(/^([ugoa]*)\+([rwxs]+)$/);
+            if (!sm) return ctx.fail("find: invalid mode '" + pv + "'", 1);
+            bits = 0;
+            var who = sm[1] || 'a';
+            sm[2].split('').forEach(function (ch) {
+              if (ch === 's') { if (/[ua]/.test(who)) bits |= 0o4000; if (/[ga]/.test(who)) bits |= 0o2000; return; }
+              var v = { r: 4, w: 2, x: 1 }[ch];
+              if (/[ua]/.test(who)) bits |= v << 6;
+              if (/[ga]/.test(who)) bits |= v << 3;
+              if (/[oa]/.test(who)) bits |= v;
+            });
+          }
+          tests.push(function (p, n) {
+            var m = (n.mode || 0) & 0o7777;
+            if (pmode === 'all') return (m & bits) === bits;
+            if (pmode === 'any') return (m & bits) !== 0;
+            return m === bits;
+          });
+        } else if (a === '-user') {
+          var uname = args[++i] || '';
+          var urec = ctx.machine.users.byName(uname);
+          if (!urec) return ctx.fail("find: '" + uname + "' is not the name of a known user", 1);
+          tests.push(function (p, n) { return n.uid === urec.uid; });
         } else if (a === '-maxdepth') {
           var d = parseInt(args[++i], 10);
           tests.push(function (p, n, depth) { return depth <= d; });

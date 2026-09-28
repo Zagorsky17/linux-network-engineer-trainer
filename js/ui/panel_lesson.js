@@ -89,8 +89,9 @@
     return box;
   }
 
-  function algorithm(article, open) {
-    var U = NET.method.universal;
+  /* Для уроков раздела «Безопасность» показывается алгоритм реакции на атаку. */
+  function algorithm(article, open, lessonId) {
+    var U = NET.method.playbookFor ? NET.method.playbookFor(lessonId) : NET.method.universal;
     article.appendChild(h('h3', 'lesson-h', U.title));
     article.appendChild(reveal('Шаги от базовых проверок к глубоким (' + U.steps.length + ')', 'algo', function (body) {
       U.intro.forEach(function (t) { body.appendChild(h('p', 'lesson-p', t)); });
@@ -339,7 +340,7 @@
     });
 
     if (m) {
-      algorithm(article, lesson.id === 'lab01');
+      algorithm(article, lesson.id === 'lab01' || lesson.id === 'sec01', lesson.id);
       commandGuide(article, m);
       scenario(article, m.scenario);
     }

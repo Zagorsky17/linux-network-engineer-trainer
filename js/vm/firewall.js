@@ -69,7 +69,8 @@
 
   /* ---------- ufw-слой ---------- */
 
-  Firewall.prototype.ufwAdd = function (rule) {
+  Firewall.prototype.ufwAdd = function (rule, opts) {
+    opts = opts || {};
     var r = {
       action: rule.action || 'allow',       // allow | deny | reject | limit
       direction: rule.direction || 'in',
@@ -84,7 +85,12 @@
         String(x.port) === String(r.port) && x.proto === r.proto && x.from === r.from;
     });
     if (dup) return { ok: true, dup: true, rule: r };
-    this.ufw.rules.push(r);
+    /* ufw insert N: порядок правил важен — срабатывает первое совпавшее */
+    if (opts.index !== undefined && opts.index >= 0 && opts.index < this.ufw.rules.length) {
+      this.ufw.rules.splice(opts.index, 0, r);
+    } else {
+      this.ufw.rules.push(r);
+    }
     return { ok: true, rule: r };
   };
 
@@ -96,7 +102,11 @@
         continue;
       }
       if (String(r.port) === String(matcher.port) &&
-        (matcher.proto === undefined || r.proto === matcher.proto)) {
+        (matcher.proto === undefined || r.proto === matcher.proto) &&
+        (matcher.from === undefined || r.from === matcher.from) &&
+        (matcher.to === undefined || r.to === matcher.to) &&
+        (matcher.action === undefined || r.action === matcher.action) &&
+        (matcher.direction === undefined || r.direction === matcher.direction)) {
         this.ufw.rules.splice(i, 1);
         return { ok: true };
       }
@@ -169,7 +179,13 @@
           if (ur.proto !== 'any' && ur.proto !== pkt.proto) continue;
           if (!portMatch(ur.port, pkt.dport)) continue;
           if (!addrMatch(ur.from === 'any' ? null : ur.from, pkt.src)) continue;
+          if (ur.to !== 'any' && !addrMatch(ur.to, pkt.dst)) continue;
           var act = ur.action === 'deny' ? 'DROP' : (ur.action === 'reject' ? 'REJECT' : 'ACCEPT');
+          /* limit: как ufw — не больше 6 новых подключений с адреса за 30 секунд */
+          if (ur.action === 'limit') {
+            if (pkt.flood) act = 'DROP';          // флудер упирается в лимит
+            else if (!pkt.dry) act = this._limited(pkt.src, pkt.dport) ? 'DROP' : 'ACCEPT';
+          }
           this._count(act);
           return act;
         }
@@ -181,6 +197,16 @@
         return verdict;
       }
       if (chain === 'OUTPUT') {
+        for (var o = 0; o < this.ufw.rules.length; o++) {
+          var or = this.ufw.rules[o];
+          if (or.direction !== 'out') continue;
+          if (or.proto !== 'any' && or.proto !== pkt.proto) continue;
+          if (!portMatch(or.port, pkt.dport)) continue;
+          if (!addrMatch(or.to === 'any' ? null : or.to, pkt.dst)) continue;
+          var oa = or.action === 'deny' ? 'DROP' : (or.action === 'reject' ? 'REJECT' : 'ACCEPT');
+          this._count(oa);
+          return oa;
+        }
         var od = this.ufw.defaults.outgoing;
         return od === 'allow' ? 'ACCEPT' : 'DROP';
       }
@@ -201,6 +227,15 @@
     return p;
   };
 
+  Firewall.prototype._limited = function (src, port) {
+    var key = src + '>' + port, now = Date.now();
+    this.limitHits = this.limitHits || {};
+    var hits = (this.limitHits[key] || []).filter(function (t) { return now - t < 30000; });
+    hits.push(now);
+    this.limitHits[key] = hits.slice(-20);
+    return hits.length > 6;
+  };
+
   Firewall.prototype._count = function (t) {
     if (t === 'DROP') this.counters.dropped++;
     else if (t === 'REJECT') this.counters.rejected++;
@@ -210,7 +245,7 @@
   /* Открыт ли порт с точки зрения фильтра (для проверок в лабораториях). */
   Firewall.prototype.allowsInput = function (proto, port, src) {
     return this.evaluate('INPUT', {
-      proto: proto, dport: port, src: src || '0.0.0.0', dst: null, ct: 'NEW', inIface: 'ens33'
+      proto: proto, dport: port, src: src || '0.0.0.0', dst: null, ct: 'NEW', inIface: 'ens33', dry: true
     }) === 'ACCEPT';
   };
 
@@ -332,7 +367,8 @@
       lines.push('--                         ------      ----');
     }
     this.ufw.rules.forEach(function (r, i) {
-      var to = (r.port === null ? 'Anywhere' : (r.port + (r.proto !== 'any' ? '/' + r.proto : '')));
+      var portStr = r.port === null ? '' : (r.port + (r.proto !== 'any' ? '/' + r.proto : ''));
+      var to = r.to !== 'any' ? r.to + (portStr ? ' ' + portStr : '') : (portStr || 'Anywhere');
       var action = r.action.toUpperCase() + (r.direction === 'in' ? '' : ' OUT');
       var from = r.from === 'any' ? 'Anywhere' : r.from;
       var prefix = numbered ? '[' + U.pad(i + 1, 2) + '] ' : '';

@@ -24,6 +24,23 @@
     return order.map(function (id) { return labs[id]; });
   }
 
+  /*
+   * Разделы курса. Лаборатория без поля track относится к диагностике;
+   * track: 'security' — раздел «Безопасность» (сервер под атакой).
+   */
+  var TRACKS = [
+    { id: 'diag', title: 'Диагностика сети', short: 'Диагностика',
+      desc: 'Сервер сломан: найти причину и восстановить работу.' },
+    { id: 'security', title: 'Безопасность', short: 'Безопасность',
+      desc: 'Сервер атакуют: отразить атаку и закрыть возможность её повторить.' }
+  ];
+
+  function trackOf(lab) { return lab && lab.track === 'security' ? 'security' : 'diag'; }
+
+  function byTrack(id) {
+    return list().filter(function (lab) { return trackOf(lab) === id; });
+  }
+
   function get(id) { return labs[id] || null; }
 
   /* Вариант = базовая постановка или одна из мутаций той же задачи. */
@@ -161,9 +178,14 @@
         return doc;
       },
 
-      /* Файл целиком (root:root, по умолчанию 0644). */
+      /* Файл целиком (root:root, по умолчанию 0644); каталоги создаются при необходимости. */
       writeFile: function (hostName, path, content, mode) {
-        world.get(hostName).vfs.write(path, content, NET.ROOTCTX, { mode: mode === undefined ? 0o644 : mode });
+        var m = world.get(hostName);
+        var dir = path.slice(0, path.lastIndexOf('/'));
+        if (dir && !m.vfs.exists(dir, NET.ROOTCTX)) {
+          m.vfs.mkdir(dir, NET.ROOTCTX, { parents: true, mode: 0o755 });
+        }
+        m.vfs.write(path, content, NET.ROOTCTX, { mode: mode === undefined ? 0o644 : mode });
       },
 
       /* Дописать строки в конец файла (например, запись в /etc/hosts). */
@@ -191,6 +213,92 @@
         var m = world.get(hostName);
         m.net.sysctl[key] = String(value);
         if (file) this.appendFile(hostName, '/etc/sysctl.d/' + file, key + ' = ' + value);
+      },
+
+      /* ---------- помощники раздела «Безопасность» ---------- */
+
+      /* Установить fail2ban (по умолчанию не запущен и не включён). */
+      fail2ban: function (hostName, opts) {
+        NET.fail2ban.install(world.get(hostName), opts || {});
+      },
+
+      /*
+       * Записать в журнал sshd серию неудачных попыток входа с адреса —
+       * «идёт перебор паролей». Если на хосте работает fail2ban с
+       * включённым jail, он тут же посчитает попытки и забанит.
+       */
+      bruteForce: function (hostName, ip, count, opts) {
+        opts = opts || {};
+        var m = world.get(hostName);
+        var user = opts.user || 'root';
+        for (var i = 0; i < (count || 1); i++) {
+          m.log('sshd', 'Failed password for ' + (opts.invalid ? 'invalid user ' : '') + user +
+            ' from ' + ip + ' port ' + (40000 + i) + ' ssh2');
+        }
+      },
+
+      /*
+       * Поставить сервер под нагрузку с внешних адресов:
+       *   kind 'syn'  — SYN-флуд на порт; спасают SYN cookies;
+       *   kind 'conn' — исчерпание соединений с адресов sources; спасает
+       *                 всё, что не пускает эти адреса к порту (deny/limit/fail2ban).
+       */
+      flood: function (hostName, spec) {
+        var m = world.get(hostName);
+        m.quirks = m.quirks || {};
+        m.quirks.floods = (m.quirks.floods || []).filter(function (f) {
+          return Number(f.port) !== Number(spec.port || 80);
+        });
+        m.quirks.floods.push({
+          kind: spec.kind || 'conn', port: spec.port || 80,
+          sources: spec.sources || ['198.51.100.66', '198.51.100.67', '198.51.100.68']
+        });
+        if ((spec.kind || 'conn') === 'syn') {
+          m.log('kernel', 'TCP: request_sock_TCP: Possible SYN flooding on port ' + (spec.port || 80) +
+            '. Sending cookies.', 'warning');
+        }
+        /* полуоткрытые соединения видны в ss -tan state syn-recv */
+        if ((spec.kind || 'conn') === 'syn') {
+          var local = m.net.primaryIP();
+          for (var i = 0; i < (spec.halfOpen || 24); i++) {
+            m.net.sockets.push({
+              proto: 'tcp', addr: local, port: spec.port || 80, state: 'SYN-RECV',
+              peerAddr: '198.51.100.' + (2 + (i % 250)), peerPort: 30000 + i,
+              pid: null, process: null, unit: null, ts: Date.now()
+            });
+          }
+        }
+      },
+
+      /* Строки в /var/log/nginx/access.log (формат combined), как от реальных запросов. */
+      accessLog: function (hostName, entries) {
+        var lines = entries.map(function (e) {
+          return NET.httpd.logLine(e.ip, e.method || 'GET', e.path, e.status === undefined ? 200 : e.status,
+            e.size === undefined ? 612 : e.size, e.ua, e.ts);
+        });
+        this.appendFile(hostName, '/var/log/nginx/access.log', lines.join('\n'));
+      },
+
+      /* Служба, слушающая адрес из своего конфига (Redis, MySQL и пр.). */
+      service: function (hostName, spec) {
+        var m = world.get(hostName);
+        if (spec.configFile && spec.configText !== undefined) {
+          this.writeFile(hostName, spec.configFile, spec.configText, spec.mode);
+        }
+        if (!m.services.get(spec.name)) {
+          m.services.define({
+            name: spec.name, description: spec.description || spec.name,
+            exec: spec.exec || ('/usr/bin/' + spec.name), ports: spec.ports || [],
+            state: 'inactive', enabled: spec.enabled !== false, bindFrom: spec.bindFrom || null
+          });
+        }
+        if (spec.start !== false) m.services.start(spec.name);
+        return m.services.get(spec.name);
+      },
+
+      /* Создать пользователя (для сценариев «лишний аккаунт»). */
+      addUser: function (hostName, spec) {
+        return world.get(hostName).users.addUser(spec);
       }
     };
   }
@@ -374,6 +482,9 @@
   NET.labs = {
     register: register,
     list: list,
+    tracks: TRACKS,
+    trackOf: trackOf,
+    byTrack: byTrack,
     get: get,
     variants: variants,
     start: start,
