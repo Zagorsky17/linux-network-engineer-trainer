@@ -545,6 +545,7 @@
     get: get,
     grade: grade,
     ids: function () { return Object.keys(quizzes); },
+    add: quiz,
     has: function (id) { return !!quizzes[id]; },
     PASS_PERCENT: PASS_PERCENT
   };

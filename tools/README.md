@@ -8,10 +8,11 @@
 Запуск из корня проекта:
 
 ```sh
-node tools/run-selftest.js .          # ~290 проверок движка (то же, что команда selftest)
-node tools/run-shell-tests.js .       # ~185 проверок вывода и exit codes реальных команд
-node tools/run-lab-walkthrough.js .   # все 10 лабораторий решаются эталонными командами
+node tools/run-selftest.js .          # ~640 проверок движка и контракта лабораторий (то же, что команда selftest)
+node tools/run-shell-tests.js .       # ~250 проверок вывода и exit codes реальных команд
+node tools/run-lab-walkthrough.js .   # все лаборатории решаются эталонными командами (поле solution)
 node tools/run-lab-mutations.js .     # все варианты (мутации) лабораторий решаемы
+node tools/run-lesson-practice.js .   # практика и решения из уроков сверяются со стендом
 node tools/run-storage-tests.js .     # каскад IndexedDB → localStorage → память
 node tools/run-ui-tests.js .          # загрузка UI, панели, терминал, схема, палитра
 node tools/run-security-tests.js .    # XSS, инъекции, pollution, изоляция, злой ввод
@@ -22,3 +23,6 @@ node tools/run-security-tests.js .    # XSS, инъекции, pollution, изо
 
 `files.json` — порядок загрузки модулей движка; при добавлении нового файла в
 `js/` допишите его и сюда (и, конечно, в `index.html`).
+
+Новая лаборатория: `node tools/new-lab.js lab16 "Название" 3` создаёт заготовки
+сценария и теории и сам регистрирует их в обоих списках. Подробности — в CLAUDE.md.

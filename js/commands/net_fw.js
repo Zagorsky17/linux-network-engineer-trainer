@@ -202,7 +202,8 @@
         var a = argv[i];
         if (a === '-L' || a === '--list') {
           var chain = argv[i + 1] && argv[i + 1][0] !== '-' ? argv[i + 1].toUpperCase() : null;
-          ctx.out(fw.renderIptablesList(chain, argv.indexOf('-n') >= 0, argv.indexOf('-v') >= 0));
+          ctx.out(fw.renderIptablesList(chain, argv.indexOf('-n') >= 0, argv.indexOf('-v') >= 0,
+            argv.indexOf('--line-numbers') >= 0));
           return 0;
         }
         if (a === '-S') {
@@ -237,7 +238,7 @@
           var rule = parseIptRule(rest);
           if (!rule.target) { ctx.errLine('iptables: no target specified (-j)'); return 2; }
           if (a === '-D') {
-            var r = fw.delRule(chain2, { proto: rule.proto, dport: rule.dport, target: rule.target });
+            var r = fw.delRule(chain2, { proto: rule.proto, dport: rule.dport, target: rule.target, src: rule.src, dst: rule.dst });
             if (r.err) { ctx.errLine(r.err); return 1; }
             return 0;
           }

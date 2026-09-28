@@ -212,6 +212,64 @@ async function run(line, asserts) {
   await run('sudo sshd -t', [{ exit: 0 }]);
   await run('sudo nginx -t', [{ has: 'syntax is ok' }]);
 
+  /* --- механики, на которых держатся lab11–lab15 --- */
+  NET.labs.stop();
+  NET.world.rebuild();
+  NET.world.setCurrent('srv1');
+  await run('ipcalc 192.168.10.20/28', [{ has: 'Network:   192.168.10.16/28' }, { has: 'HostMax:   192.168.10.30' },
+    { has: 'Hosts/Net: 14' }, { exit: 0 }]);
+  await run('ipcalc -b 10.0.0.1 255.255.0.0', [{ has: 'Network:   10.0.0.0/16' }, { not: '00001010' }]);
+  await run('ipcalc 1.2.3.4/33', [{ has: 'INVALID MASK' }, { exit: 1 }]);
+  await run('head -2 /etc/hosts', [{ has: 'localhost' }, { not: 'ip6-allrouters' }]);
+  await run('tail -1 /etc/hosts', [{ has: 'ip6-allrouters' }, { not: 'localhost' }]);
+  await run('grep hosts /etc/nsswitch.conf', [{ has: 'files dns' }]);
+  await run('sudo ip route add 10.50.0.0/16 via 172.16.0.1 dev ens33', [{ has: 'Nexthop has invalid gateway' }, { exit: 2 }]);
+
+  await run("printf 'net.ipv4.ip_forward = 1\\n' | sudo tee /etc/sysctl.d/90-test.conf", []);
+  await run('sudo sysctl -p /etc/sysctl.d/90-test.conf', [{ has: 'net.ipv4.ip_forward = 1' }, { exit: 0 }]);
+  await run('sudo sysctl -p /etc/nope.conf', [{ has: 'cannot open' }, { exit: 255 }]);
+  await run('sysctl -p', [{ has: 'permission denied' }, { exit: 1 }]);
+  await run('sudo sysctl --system', [{ has: '* Applying /etc/sysctl.d/90-test.conf' }, { has: 'net.ipv4.ip_forward = 1' }]);
+  await run('sudo reboot', [{ exit: 0 }]);
+  await run('sysctl net.ipv4.ip_forward', [{ has: '= 1' }]);   // файл применён при загрузке
+  await run('sudo rm /etc/sysctl.d/90-test.conf', [{ exit: 0 }]);
+  await run('sudo sysctl -w net.ipv4.ip_forward=0', []);
+
+  await run("sudo sed -i 's/listen 443 ssl/listen 127.0.0.1:443 ssl/' /etc/nginx/sites-available/default", [{ exit: 0 }]);
+  await run('sudo systemctl reload nginx', [{ exit: 0 }]);
+  await run('ss -tln', [{ has: '127.0.0.1:443' }, { has: '0.0.0.0:80' }]);
+  await run('connect app1', []);
+  await run('nc -zv 192.168.10.20 443', [{ has: 'refused' }]);
+  await run('connect srv1', []);
+  await run("sudo sed -i 's/listen 127.0.0.1:443 ssl/listen 443 ssl/' /etc/nginx/sites-available/default", []);
+  await run('sudo systemctl reload nginx', []);
+  await run('ss -tln', [{ has: '0.0.0.0:443' }]);
+
+  await run("sudo sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 127.0.0.1/' /etc/ssh/sshd_config", []);
+  await run('sudo systemctl restart ssh', [{ exit: 0 }]);
+  await run('ss -tln', [{ has: '127.0.0.1:22' }]);
+  await run("sudo sed -i 's/^ListenAddress 127.0.0.1/#ListenAddress 0.0.0.0/' /etc/ssh/sshd_config", []);
+  await run('sudo systemctl restart ssh', []);
+  await run('ss -tln', [{ has: '0.0.0.0:22' }]);
+
+  await run('connect gw', []);
+  await run('sudo iptables -A FORWARD -s 10.1.0.0/16 -j DROP', [{ exit: 0 }]);
+  await run('sudo iptables -A FORWARD -s 10.2.0.0/16 -j DROP', [{ exit: 0 }]);
+  await run('sudo iptables -L FORWARD -n --line-numbers', [{ has: 'num  target' }, { re: /\n2 +DROP +all +-- +10\.2\.0\.0\/16/ }]);
+  await run('sudo iptables -D FORWARD -s 10.2.0.0/16 -j DROP', [{ exit: 0 }]);
+  await run('sudo iptables -L FORWARD -n', [{ has: '10.1.0.0/16' }, { not: '10.2.0.0/16' }]);
+  await run('sudo iptables -D FORWARD 1', [{ exit: 0 }]);
+  await run('sudo sysctl -w net.ipv4.ip_forward=0', []);
+  await run('connect srv1', []);
+  await run('ping -c1 8.8.8.8', [{ has: '100% packet loss' }]);           // шлюз без пересылки
+  await run('traceroute -n -m 2 8.8.8.8', [{ re: /\n 1 +\* \* \*/ }]);
+  await run('connect gw', []);
+  await run('sudo sysctl -w net.ipv4.ip_forward=1', []);
+  await run('sudo reboot', [{ exit: 0 }]);
+  await run('ip -br a', [{ has: '192.168.10.1/24' }, { has: '203.0.113.2/30' }]);   // статические адреса после reboot
+  await run('connect srv1', []);
+  await run('ping -c1 8.8.8.8', [{ has: '1 received' }]);
+
   console.log('\n===== shell smoke: ' + passes + ' PASS, ' + fails + ' FAIL =====');
   process.exit(fails ? 1 : 0);
 })();

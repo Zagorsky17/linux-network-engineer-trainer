@@ -50,6 +50,11 @@
 "learn/srs.js",
 "learn/modes.js",
 "learn/debrief.js",
+"learn/content/lab11.js",
+"learn/content/lab12.js",
+"learn/content/lab13.js",
+"learn/content/lab14.js",
+"learn/content/lab15.js",
 "labs/checks.js",
 "labs/engine.js",
 "labs/lab01.js",
@@ -62,6 +67,11 @@
 "labs/lab08.js",
 "labs/lab09.js",
 "labs/lab10.js",
+"labs/lab11.js",
+"labs/lab12.js",
+"labs/lab13.js",
+"labs/lab14.js",
+"labs/lab15.js",
 "labs/pool.js",
 "dev/selftest.js"
 ]

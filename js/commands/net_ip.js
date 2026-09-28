@@ -559,4 +559,60 @@
       return 0;
     }
   });
+
+  /* ipcalc — границы подсети. Формат как у ipcalc 0.51 из Ubuntu (-b — без двоичного вида). */
+  function bits(ip, prefix) {
+    var b = ('00000000000000000000000000000000' + (U.ip2int(ip) >>> 0).toString(2)).slice(-32);
+    var dotted = b.slice(0, 8) + '.' + b.slice(8, 16) + '.' + b.slice(16, 24) + '.' + b.slice(24);
+    var cut = prefix + Math.floor(prefix / 8) - (prefix % 8 === 0 && prefix > 0 ? 1 : 0);
+    if (prefix % 8 === 0) return dotted;
+    return dotted.slice(0, cut) + ' ' + dotted.slice(cut);
+  }
+
+  reg({
+    name: 'ipcalc', category: 'net', summary: 'калькулятор подсетей IPv4',
+    usage: 'ipcalc [-b] ADDRESS[/PREFIX] [NETMASK]',
+    run: function (ctx) {
+      var p = A.parse(ctx.argv, { bool: ['b', 'n', 'nobinary'] });
+      if (!p.rest.length) return ctx.fail('Usage: ipcalc [options] <ADDRESS>[[/]<NETMASK>] [NETMASK]', 1);
+      var parts = String(p.rest[0]).split('/');
+      var ip = parts[0], prefix = 24;
+      if (parts.length > 1) prefix = U.isIPv4(parts[1]) ? U.mask2prefix(parts[1]) : Number(parts[1]);
+      else if (p.rest[1]) prefix = U.isIPv4(p.rest[1]) ? U.mask2prefix(p.rest[1]) : Number(p.rest[1]);
+      if (!U.isIPv4(ip)) return ctx.fail('INVALID ADDRESS: ' + ip, 1);
+      if (!/^\d+$/.test(String(prefix)) || prefix < 0 || prefix > 32) {
+        return ctx.fail('INVALID MASK1:  ' + (parts[1] || p.rest[1]), 1);
+      }
+      var bin = !(p.flags.b || p.flags.n || p.flags.nobinary);
+      var mask = U.prefix2mask(prefix);
+      var wild = U.int2ip((~U.ip2int(mask)) >>> 0);
+      var net = U.network(ip, prefix), bc = U.broadcast(ip, prefix);
+      function row(label, value, b) {
+        ctx.line((U.padRight(label, 11) + U.padRight(value, 21) + (bin && b ? b : '')).replace(/\s+$/, ''));
+      }
+      row('Address:', ip, bits(ip, prefix));
+      row('Netmask:', mask + ' = ' + prefix, bits(mask, prefix));
+      row('Wildcard:', wild, bits(wild, prefix));
+      ctx.line('=>');
+      row('Network:', net + '/' + prefix, bits(net, prefix));
+      if (prefix <= 30) {
+        var hmin = U.int2ip(U.ip2int(net) + 1), hmax = U.int2ip(U.ip2int(bc) - 1);
+        row('HostMin:', hmin, bits(hmin, prefix));
+        row('HostMax:', hmax, bits(hmax, prefix));
+        row('Broadcast:', bc, bits(bc, prefix));
+        ctx.line(U.padRight('Hosts/Net:', 11) + U.padRight(String(Math.pow(2, 32 - prefix) - 2), 21) + privClass(ip));
+      } else {
+        row('Hostroute:', ip, bits(ip, prefix));
+        ctx.line(U.padRight('Hosts/Net:', 11) + U.padRight(String(prefix === 32 ? 1 : 2), 21) + privClass(ip));
+      }
+      return 0;
+    }
+  });
+
+  function privClass(ip) {
+    var o = ip.split('.').map(Number);
+    var cls = o[0] < 128 ? 'A' : (o[0] < 192 ? 'B' : (o[0] < 224 ? 'C' : 'D'));
+    var priv = o[0] === 10 || (o[0] === 172 && o[1] >= 16 && o[1] <= 31) || (o[0] === 192 && o[1] === 168);
+    return 'Class ' + cls + (priv ? ', Private Internet' : '');
+  }
 })(window.NET);

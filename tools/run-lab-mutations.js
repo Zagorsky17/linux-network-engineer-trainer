@@ -69,29 +69,45 @@ const diagCommands = {
   'lab09/m1': [{ line: 'sudo arping -I ens33 192.168.10.20' }],
 };
 
-let fails = 0, total = 0;
-NET.labs.list().forEach(lab => {
-  const variants = NET.labs.variants(lab);
-  variants.forEach((v, idx) => {
-    if (idx === 0) return;   // базовые варианты покрыты walkthrough
-    total++;
-    const key = lab.id + '/m' + idx;
-    NET.labs.start(lab.id, { variant: idx });
-    const before = NET.labs.check();
-    const fix = fixes[key];
-    if (!fix) { console.log('SKIP ' + key + ' (нет описанного исправления)'); return; }
-    try { fix(NET.world); } catch (e) { console.log('FAIL ' + key + ' — исправление упало: ' + e.message); fails++; return; }
-    (diagCommands[key] || []).forEach(c => NET.labs.current().commands.push({ line: c.line, ts: Date.now() }));
-    /* шаги диагностики: имитируем выполнение всех ключевых команд для оценки */
-    const after = NET.labs.check();
-    if (!before.solved && after.solved) {
-      console.log('PASS ' + key + '  (' + v.name + ')');
-    } else {
-      fails++;
-      console.log('FAIL ' + key + ' (' + v.name + ') — before.solved=' + before.solved + ' after.solved=' + after.solved);
-      after.results.filter(r => !r.ok).forEach(r => console.log('    ✘ ' + r.title + ' — ' + (r.detail || '')));
+/* Мутации новых лабораторий несут решение в себе: solution — команды оболочки. */
+let out = '';
+const session = NET.shell.createSession(NET.world, { onOutput: t => out += t, onError: t => out += t });
+session.streaming = false;
+async function runSolution(lines) {
+  NET.world.setCurrent('srv1');
+  for (const line of lines) {
+    out = '';
+    await NET.shell.run(session, line, {});
+  }
+}
+
+(async () => {
+  let fails = 0, total = 0;
+  for (const lab of NET.labs.list()) {
+    const variants = NET.labs.variants(lab);
+    for (let idx = 1; idx < variants.length; idx++) {   // базовые варианты покрыты walkthrough
+      const v = variants[idx];
+      total++;
+      const key = lab.id + '/m' + idx;
+      NET.labs.start(lab.id, { variant: idx });
+      const before = NET.labs.check();
+      const fix = fixes[key];
+      const lines = Array.isArray(v.solution) && v.solution.length ? v.solution : null;
+      if (!fix && !lines) { console.log('FAIL ' + key + ' (' + v.name + ') — нет решения (поле solution у мутации)'); fails++; continue; }
+      try {
+        if (fix) fix(NET.world); else await runSolution(lines);
+      } catch (e) { console.log('FAIL ' + key + ' — исправление упало: ' + e.message); fails++; continue; }
+      (diagCommands[key] || []).forEach(c => NET.labs.current().commands.push({ line: c.line, ts: Date.now() }));
+      const after = NET.labs.check();
+      if (!before.solved && after.solved) {
+        console.log('PASS ' + key + '  (' + v.name + ')');
+      } else {
+        fails++;
+        console.log('FAIL ' + key + ' (' + v.name + ') — before.solved=' + before.solved + ' after.solved=' + after.solved);
+        after.results.filter(r => !r.ok).forEach(r => console.log('    ✘ ' + r.title + ' — ' + (r.detail || '')));
+      }
     }
-  });
-});
-console.log('\n===== mutations: ' + (total - fails) + '/' + total + ' вариантов решаются =====');
-process.exit(fails ? 1 : 0);
+  }
+  console.log('\n===== mutations: ' + (total - fails) + '/' + total + ' вариантов решаются =====');
+  process.exit(fails ? 1 : 0);
+})();

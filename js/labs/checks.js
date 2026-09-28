@@ -39,6 +39,18 @@
     });
   };
 
+  /* Соединение по имени — как у приложения: системный резолвер (/etc/hosts, DNS), затем TCP. */
+  C.tcpOpenByName = function (from, name, port, label) {
+    return mk((label || 'TCP') + ' ' + from + ' → ' + name + ':' + port, function (world) {
+      var m = world.get(from);
+      if (!m) return { ok: false, detail: 'нет хоста ' + from };
+      var res = NET.dns.resolve(world, m, name, { type: 'A' });
+      if (!res.ip) return { ok: false, detail: 'имя не разрешается (' + res.status + ')' };
+      var r = P.tcpConnect(world, m, res.ip, port, {});
+      return { ok: !!r.ok, detail: r.ok ? null : res.ip + ': ' + describe(r) };
+    });
+  };
+
   C.routeExists = function (host, cidr, opts) {
     opts = opts || {};
     return mk('Маршрут ' + cidr + ' на ' + host + (opts.via ? ' через ' + opts.via : ''), function (world) {

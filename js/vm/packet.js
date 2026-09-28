@@ -335,8 +335,8 @@
     return false;
   }
 
+  /* Маршрутизатор — тоже просто Linux: без ip_forward=1 транзит молча отбрасывается. */
   function isForwarding(m) {
-    if (m.router) return true;
     return m.net.sysctl['net.ipv4.ip_forward'] === '1';
   }
 
