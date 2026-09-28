@@ -5,7 +5,7 @@ const ROOT = process.argv[2];
 
 const engineFiles = JSON.parse(fs.readFileSync(path.join(__dirname, 'files.json'), 'utf8'));
 const uiFiles = ['ui/dom.js', 'ui/notify.js', 'ui/pager.js', 'ui/terminal.js', 'ui/panel_task.js', 'ui/panel_labs.js',
-  'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js', 'ui/panel_history.js',
+  'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js', 'ui/panel_quiz.js', 'ui/panel_history.js',
   'ui/palette.js', 'ui/shortcuts.js', 'ui/app.js'];
 
 parseHtml(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'));
@@ -203,6 +203,54 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   ok(text('tab-lesson').indexOf('MTU') >= 0, 'открыт нужный урок');
   await NET.ui.terminal.run('lesson нет-такого');
   ok(text('term-out').indexOf('нет урока') >= 0, 'неизвестный урок даёт понятную ошибку');
+
+  /* методическая часть урока */
+  NET.ui.lesson.open('lab01');
+  const lessonText = text('tab-lesson');
+  ['Универсальный алгоритм диагностики', 'Словарь симптомов', 'Команды: что показывают и как читать результат',
+    'Разбор похожего случая', 'Гипотезы', 'Практика на стенде', 'Ожидаемо:', 'Вопрос:',
+    'Показать решение', 'Чек-лист диагностики', 'Контрольные вопросы', 'Тест по командам'].forEach(t => {
+    ok(lessonText.indexOf(t) >= 0, 'в уроке lab01 есть блок «' + t + '»');
+  });
+  const solution = $('tab-lesson').querySelectorAll('.solution')[0];
+  ok(solution && solution.tagName === 'DETAILS' && !solution.open, 'решение в уроке свёрнуто по умолчанию');
+  ok($('tab-lesson').querySelectorAll('.qa').every(d => !d.open), 'ответы на контрольные вопросы скрыты');
+
+  /* тест по командам */
+  $('tab-lesson').querySelectorAll('.lesson-quiz-call')[0].querySelectorAll('.btn')[0].dispatch('click');
+  const quizCards = $('tab-lesson').querySelectorAll('.quiz-q');
+  const quizData = NET.quiz.get('lab01');
+  ok(quizCards.length === quizData.questions.length, 'тест открывается и показывает все вопросы', String(quizCards.length));
+  NET.ui.app.switchCenterTab('terminal');
+  NET.ui.app.switchCenterTab('lesson');
+  ok($('tab-lesson').querySelectorAll('.quiz-q').length === quizData.questions.length,
+    'переключение вкладок не сбрасывает открытый тест');
+
+  const pick = (card, right) => {
+    const qi = quizCards.indexOf(card);
+    const answer = quizData.questions[qi].answer;
+    const btn = card.querySelectorAll('.quiz-opt').find(b => (Number(b.getAttribute('data-orig')) === answer) === right);
+    btn.dispatch('click');
+  };
+  pick(quizCards[0], false);
+  ok(text('tab-lesson').indexOf('Неверно') >= 0, 'неверный ответ помечается и объясняется');
+  pick(quizCards[0], true);
+  ok(quizCards[0].querySelectorAll('.quiz-opt').every(b => b.disabled), 'повторно ответить на вопрос нельзя');
+  quizCards.slice(1).forEach(c => pick(c, true));
+  const quizResult = $('tab-lesson').querySelectorAll('.quiz-result')[0];
+  const expected = Math.round((quizData.questions.length - 1) * 100 / quizData.questions.length);
+  ok(quizResult && quizResult.textContent.indexOf(expected + '%') >= 0, 'итог теста считается верно', quizResult && quizResult.textContent);
+  ok(NET.progress.quizResult('lab01') && NET.progress.quizResult('lab01').best === expected, 'результат теста сохранён в прогрессе');
+  NET.ui.lesson.renderIndex();
+  ok(text('tab-lesson').indexOf('тест ' + expected + '%') >= 0, 'результат теста виден в списке уроков');
+
+  await NET.ui.terminal.run('quiz list');
+  ok(text('term-out').indexOf('лучший ' + expected + '%') >= 0, 'quiz list показывает результаты');
+  await NET.ui.terminal.run('quiz lab05');
+  ok($('tab-lesson').querySelectorAll('.quiz-q').length === NET.quiz.get('lab05').questions.length,
+    'команда quiz открывает тест во вкладке');
+  await NET.ui.terminal.run('quiz нет-такого');
+  ok(text('term-out').indexOf('нет теста') >= 0, 'неизвестный тест даёт понятную ошибку');
   NET.ui.app.switchCenterTab('terminal');
 
   ok(errors.length === 0, 'нет ошибок в console.error', errors.slice(0, 3).join(' | '));

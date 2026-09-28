@@ -10,7 +10,7 @@ const { docObj, parseHtml, windowApi } = require(path.join(__dirname, 'domshim.j
 const ROOT = process.argv[2] || '.';
 const engineFiles = JSON.parse(fs.readFileSync(path.join(__dirname, 'files.json'), 'utf8'));
 const uiFiles = ['ui/dom.js', 'ui/notify.js', 'ui/pager.js', 'ui/terminal.js', 'ui/panel_task.js',
-  'ui/panel_labs.js', 'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js',
+  'ui/panel_labs.js', 'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js', 'ui/panel_quiz.js',
   'ui/panel_history.js', 'ui/palette.js', 'ui/shortcuts.js', 'ui/app.js'];
 
 parseHtml(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'));

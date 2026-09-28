@@ -190,6 +190,27 @@
     return !!(p.lessons && p.lessons[id] && p.lessons[id].readAt);
   }
 
+  /* Результат теста по командам урока: храним лучший и число попыток. */
+  function recordQuiz(id, percent) {
+    var p = get();
+    p.lessons = p.lessons || {};
+    var rec = p.lessons[id] || (p.lessons[id] = { readAt: 0, times: 0 });
+    var pct = NET.util.clampInt(percent, 0, 0, 100);
+    rec.quizBest = Math.max(rec.quizBest || 0, pct);
+    rec.quizTries = (rec.quizTries || 0) + 1;
+    rec.quizAt = Date.now();
+    save();
+    NET.bus.emit('progress:updated', { reason: 'quiz', id: id, percent: pct });
+    return rec;
+  }
+
+  function quizResult(id) {
+    var p = get();
+    var rec = p.lessons && p.lessons[id];
+    if (!rec || !rec.quizTries) return null;
+    return { best: rec.quizBest || 0, tries: rec.quizTries, at: rec.quizAt || 0 };
+  }
+
   function lessonsRead() {
     var p = get();
     return Object.keys(p.lessons || {}).filter(function (k) { return p.lessons[k].readAt; });
@@ -251,6 +272,8 @@
     markLessonRead: markLessonRead,
     isLessonRead: isLessonRead,
     lessonsRead: lessonsRead,
+    recordQuiz: recordQuiz,
+    quizResult: quizResult,
     skillStats: skillStats,
     skillsView: skillsView,
     overall: overall,
