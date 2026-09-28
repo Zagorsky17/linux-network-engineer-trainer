@@ -127,10 +127,17 @@
           try { conf = m.vfs.read('/etc/ssh/sshd_config', ROOT); } catch (e) {}
           var pm = conf.match(/^\s*Port\s+(\d+)/m);
           var port = pm ? Number(pm[1]) : 22;
+          /* ListenAddress ограничивает адреса, на которых sshd принимает соединения */
+          var addrs = [];
+          conf.replace(/^\s*ListenAddress\s+([0-9.]+)\s*$/mg, function (all, a) { addrs.push(a); return all; });
+          if (!addrs.length) addrs = ['0.0.0.0'];
           m.net.closeUnitSockets('ssh');
-          m.net.listen({ proto: 'tcp', port: port, addr: '0.0.0.0', pid: u.pid, process: 'sshd', unit: 'ssh' });
-          u.ports = [{ proto: 'tcp', port: port }];
-          m.log('sshd', 'Server listening on 0.0.0.0 port ' + port + '.');
+          u.ports = [];
+          addrs.forEach(function (addr) {
+            m.net.listen({ proto: 'tcp', port: port, addr: addr, pid: u.pid, process: 'sshd', unit: 'ssh' });
+            u.ports.push({ proto: 'tcp', port: port, addr: addr });
+            m.log('sshd', 'Server listening on ' + addr + ' port ' + port + '.');
+          });
         }
       },
       nginx: {
@@ -144,6 +151,15 @@
             return 'nginx: [emerg] unexpected end of file, expecting "}" in /etc/nginx/nginx.conf';
           }
           return null;
+        },
+        /* сокеты берутся из директив listen включённых сайтов */
+        onStart: function (m, u) {
+          var ports = nginxListens(m);
+          m.net.closeUnitSockets('nginx');
+          ports.forEach(function (p) {
+            m.net.listen({ proto: 'tcp', port: p.port, addr: p.addr, pid: u.pid, process: 'nginx', unit: 'nginx' });
+          });
+          u.ports = ports;
         }
       },
       'systemd-networkd': {
@@ -202,14 +218,7 @@
     });
     if (this.router) this.net.sysctl['net.ipv4.ip_forward'] = '1';
 
-    /* статические адреса/маршруты узлов инфраструктуры задаются напрямую */
-    this.hwSpec.forEach(function (i) {
-      (i.addrs || []).forEach(function (a) {
-        self.net.addAddr(i.name, a, {});
-      });
-      if (i.addrs && i.addrs.length) self.net.setLink(i.name, { up: true });
-      else if (i.up) self.net.setLink(i.name, { up: true });
-    });
+    this.applyStaticAddrs();
     this.specRoutes.forEach(function (r) { self.net.addRoute(r); });
 
     if (this.netplanSpec && this.services.isActive('systemd-networkd')) {
@@ -227,6 +236,18 @@
     }
   };
 
+  /* Статические адреса узлов инфраструктуры задаются напрямую (у них нет netplan). */
+  Machine.prototype.applyStaticAddrs = function () {
+    var self = this;
+    this.hwSpec.forEach(function (i) {
+      (i.addrs || []).forEach(function (a) {
+        self.net.addAddr(i.name, a, {});
+      });
+      if (i.addrs && i.addrs.length) self.net.setLink(i.name, { up: true });
+      else if (i.up) self.net.setLink(i.name, { up: true });
+    });
+  };
+
   /* Полная перезагрузка: остаётся только то, что записано в конфигурацию. */
   Machine.prototype.reboot = function () {
     var self = this;
@@ -238,6 +259,7 @@
     this.procs = new NET.ProcTable(this);
     this.journal = [];
     this.bootHardware();
+    this.applyStaticAddrs();
     this.procs.spawn({ pid: 1, ppid: 0, cmd: '/sbin/init splash', user: 'root', protected: true });
     this.services.list().forEach(function (u) {
       u.state = 'inactive'; u.sub = 'dead'; u.pid = null;
@@ -259,8 +281,79 @@
     });
     this.specRoutes.forEach(function (r) { self.net.addRoute(r); });
     if (this.router) this.net.sysctl['net.ipv4.ip_forward'] = '1';
+    /* systemd-sysctl: файлы конфигурации побеждают значения по умолчанию */
+    this.loadSysctl();
     NET.bus.emit('machine:reboot', { machine: this.name });
   };
+
+  /*
+   * Применяет key = value из файлов sysctl (как `sysctl -p FILE` / `sysctl --system`).
+   * Без аргумента — порядок загрузки: /etc/sysctl.d/*.conf по алфавиту, затем
+   * /etc/sysctl.conf. Возвращает [{file, key, value}] применённых строк.
+   */
+  Machine.prototype.sysctlFiles = function () {
+    var v = this.vfs, files = [];
+    NET.errors.attempt('machine.sysctlFiles:' + this.name, function () {
+      if (!v.exists('/etc/sysctl.d', ROOT)) return;
+      v.list('/etc/sysctl.d', ROOT).forEach(function (e) {
+        if (/\.conf$/.test(e.name) && e.node.type !== 'dir') files.push(e.path);
+      });
+    }, null, { silent: true, level: 'warn' });
+    files.push('/etc/sysctl.conf');
+    return files;
+  };
+
+  Machine.prototype.loadSysctl = function (paths) {
+    var self = this, applied = [];
+    (paths || this.sysctlFiles()).forEach(function (p) {
+      if (!self.vfs.exists(p, ROOT)) return;
+      var text = NET.errors.attempt('machine.loadSysctl:' + self.name, function () {
+        return self.vfs.read(p, ROOT);
+      }, null, { silent: true, level: 'warn' });
+      if (typeof text !== 'string') return;
+      text.split('\n').forEach(function (raw) {
+        var line = raw.replace(/[#;].*$/, '').trim();
+        var eq = line.indexOf('=');
+        if (eq <= 0) return;
+        var key = line.slice(0, eq).trim(), val = line.slice(eq + 1).trim();
+        if (NET.schema.isUnsafeKey(key) || self.net.sysctl[key] === undefined) return;
+        self.net.sysctl[key] = val;
+        applied.push({ file: p, key: key, value: val });
+      });
+    });
+    return applied;
+  };
+
+  /*
+   * Директивы listen из /etc/nginx/sites-enabled/*: «80», «443 ssl»,
+   * «127.0.0.1:443 ssl». IPv6-слушатели ([::]:80) не моделируются.
+   * Нет ни одной директивы — стандартные 0.0.0.0:80 и 0.0.0.0:443.
+   */
+  function nginxListens(m) {
+    var out = [], seen = {};
+    var dir = '/etc/nginx/sites-enabled';
+    if (m.vfs.exists(dir, ROOT)) {
+      m.vfs.list(dir, ROOT).forEach(function (e) {
+        var text = NET.errors.attempt('nginx.listen:' + m.name, function () {
+          return m.vfs.read(e.path, ROOT);
+        }, '', { silent: true, level: 'warn' });
+        String(text || '').split('\n').forEach(function (raw) {
+          var lm = raw.replace(/#.*$/, '').match(/^\s*listen\s+([^\s;]+)/);
+          if (!lm || lm[1].charAt(0) === '[') return;
+          var spec = lm[1], addr = '0.0.0.0', port = spec;
+          var colon = spec.lastIndexOf(':');
+          if (colon > 0) { addr = spec.slice(0, colon); port = spec.slice(colon + 1); }
+          if (addr === '*' || addr === 'localhost') addr = addr === '*' ? '0.0.0.0' : '127.0.0.1';
+          if (!/^\d+$/.test(port) || !U.isIPv4(addr)) return;
+          var key = addr + ':' + port;
+          if (seen[key]) return;
+          seen[key] = true;
+          out.push({ proto: 'tcp', port: Number(port), addr: addr });
+        });
+      });
+    }
+    return out.length ? out : [{ proto: 'tcp', port: 80, addr: '0.0.0.0' }, { proto: 'tcp', port: 443, addr: '0.0.0.0' }];
+  }
 
   /* ---------- /sys/class/net ---------- */
 
@@ -438,6 +531,22 @@
       'fe00::0 ip6-localnet',
       'ff02::1 ip6-allnodes',
       'ff02::2 ip6-allrouters'
+    ].join('\n') + '\n');
+
+    put('/etc/nsswitch.conf', [
+      '# /etc/nsswitch.conf',
+      '#',
+      '# Порядок источников для системных баз: для имён хостов сначала /etc/hosts, затем DNS.',
+      '',
+      'passwd:         files systemd',
+      'group:          files systemd',
+      'shadow:         files systemd',
+      '',
+      'hosts:          files dns',
+      'networks:       files',
+      '',
+      'protocols:      db files',
+      'services:       db files'
     ].join('\n') + '\n');
 
     put('/etc/resolv.conf', '# Generated by NetworkManager\nnameserver 127.0.0.53\noptions edns0 trust-ad\n');

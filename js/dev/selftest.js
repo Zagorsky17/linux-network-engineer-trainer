@@ -836,10 +836,55 @@
 
   /* ---------- лаборатории ---------- */
 
+  /*
+   * Контракт лаборатории: всё, без чего сценарий нельзя выпускать. Проверка
+   * ловит типичные забытые при добавлении вещи — ссылку на несуществующую
+   * врезку, отсутствие урока/методички/теста, команду решения, которой нет.
+   */
+  function testLabContract(r, labs) {
+    var bad = [];
+    var ids = {};
+    labs.forEach(function (lab) {
+      var where = lab.id + ': ';
+      if (ids[lab.id]) bad.push(where + 'повтор id');
+      ids[lab.id] = true;
+      if (!(lab.difficulty >= 1 && lab.difficulty <= 5 && lab.difficulty % 1 === 0)) bad.push(where + 'сложность не 1–5');
+      if (!lab.title || !lab.brief || !lab.goal) bad.push(where + 'нет title/brief/goal');
+      if (!NET.registries.topologies[lab.topology]) bad.push(where + 'неизвестная топология ' + lab.topology);
+      (lab.skills || []).forEach(function (s) { if (!NET.skills.get(s)) bad.push(where + 'неизвестный навык ' + s); });
+      var lesson = NET.lessons.forLab(lab.id);
+      if (!lesson) bad.push(where + 'нет урока');
+      else if (!NET.quiz.has(lesson.id)) bad.push(where + 'нет теста к уроку');
+      /* заготовка tools/new-lab.js помечает незаполненное словом TODO */
+      var texts = [lab, lesson, lesson && NET.method.get(lesson.id), lesson && NET.quiz.get(lesson.id)];
+      NET.labs.variants(lab).forEach(function (v) {
+        var th = v.debrief && v.debrief.theory;
+        if (th) texts.push(NET.theory.get(th));
+      });
+      if (JSON.stringify(texts).indexOf('TODO') >= 0) bad.push(where + 'остались незаполненные TODO');
+      NET.labs.variants(lab).forEach(function (v) {
+        var th = v.debrief && v.debrief.theory;
+        if (th && !NET.theory.get(th)) bad.push(v.id + ': врезка «' + th + '» не найдена в theory');
+        if (!th) bad.push(v.id + ': в разборе нет ссылки на врезку теории (debrief.theory)');
+        (v.solution || []).forEach(function (line) {
+          var w = firstWord(line);
+          if (w && !NET.commands.get(w)) bad.push(v.id + ': команда решения «' + w + '» не реализована');
+        });
+      });
+    });
+    r.ok(bad.length === 0, 'контракт лабораторий: сложность, урок, тест, врезки, команды решений',
+      bad.slice(0, 5).join('; '));
+  }
+
   function testLabs(r) {
     r.section('labs: сценарии действительно ломают мир');
     var labs = NET.labs.list();
-    r.eq(labs.length, 10, 'зарегистрировано 10 лабораторий');
+    r.ok(labs.length >= 15, 'зарегистрировано не меньше 15 лабораторий', String(labs.length));
+    var levels = {};
+    labs.forEach(function (lab) { levels[lab.difficulty] = (levels[lab.difficulty] || 0) + 1; });
+    r.ok([1, 2, 3, 4, 5].every(function (d) { return levels[d] >= 2; }),
+      'на каждом уровне сложности ★1–★5 не меньше двух лабораторий', JSON.stringify(levels));
+    testLabContract(r, labs);
 
     labs.forEach(function (lab) {
       var variants = NET.labs.variants(lab);

@@ -1864,6 +1864,9 @@
   NET.method = {
     universal: universal,
     get: function (lessonId) { return byLesson[lessonId] || null; },
-    ids: function () { return Object.keys(byLesson); }
+    ids: function () { return Object.keys(byLesson); },
+    add: add,
+    /* для файлов js/learn/content/*: запись netplan одной командой в решении */
+    helpers: { netplanWrite: netplanWrite, netplanYaml: netplanYaml }
   };
 })(window.NET);

@@ -297,7 +297,7 @@
     name: 'head', category: 'fs', summary: 'первые строки', usage: 'head [-n N] [FILE...]',
     complete: pathComplete,
     run: function (ctx) {
-      var p = A.parse(ctx.argv, { value: ['n', 'lines', 'c'] });
+      var p = A.parse(legacyCount(ctx.argv), { value: ['n', 'lines', 'c'] });
       var raw = p.opts.n === undefined ? p.opts.lines : p.opts.n;
       var n = raw === undefined ? 10 : C.intArg(ctx, 'head', raw, 10, { min: 0, max: 100000, notify: false });
       if (n === null) return 1;
@@ -314,7 +314,7 @@
     name: 'tail', category: 'fs', summary: 'последние строки', usage: 'tail [-n N] [-f] [FILE...]',
     complete: pathComplete,
     run: function (ctx) {
-      var p = A.parse(ctx.argv, { value: ['n', 'lines'], bool: ['f', 'F', 'follow'] });
+      var p = A.parse(legacyCount(ctx.argv), { value: ['n', 'lines'], bool: ['f', 'F', 'follow'] });
       var nRaw = String(p.opts.n === undefined ? (p.opts.lines === undefined ? '10' : p.opts.lines) : p.opts.n);
       var plus = nRaw[0] === '+';
       var n = C.intArg(ctx, 'tail', nRaw.replace('+', ''), 10, { min: 0, max: 100000, notify: false });
@@ -331,6 +331,11 @@
       return 0;
     }
   });
+
+  /* Старая форма head -5 / tail -20 — то же, что -n 5 / -n 20. */
+  function legacyCount(argv) {
+    return argv.map(function (a) { return /^-\d+$/.test(a) ? '-n' + a.slice(1) : a; });
+  }
 
   function readInput(ctx, files) {
     return C.readFiles(ctx, files, ctx.argv0, { headers: true });

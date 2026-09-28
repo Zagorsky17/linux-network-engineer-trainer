@@ -23,7 +23,8 @@
       'net.ipv4.conf.all.rp_filter': '2',
       'net.ipv4.icmp_echo_ignore_all': '0',
       'net.ipv6.conf.all.disable_ipv6': '0',
-      'net.ipv4.tcp_syncookies': '1'
+      'net.ipv4.tcp_syncookies': '1',
+      'net.ipv4.conf.all.send_redirects': '1'
     };
     this.rules = [
       { prio: 0, sel: 'from all', action: 'lookup local' },
@@ -278,6 +279,15 @@
         x.dev === r.dev && x.metric === r.metric && x.table === r.table;
     });
     if (dup) return { err: 'RTNETLINK answers: File exists' };
+    /* шлюз обязан быть в подсети интерфейса: иначе его MAC не узнать через ARP
+       (именно так неверная маска «отрезает» шлюз) */
+    if (r.gw && r.dev && !r.onlink && r.family === 4) {
+      var devIface = this.getIface(r.dev);
+      var onLink = devIface && devIface.addrs.some(function (a) {
+        return a.family === 4 && U.sameSubnet(a.ip, r.gw, a.prefix);
+      });
+      if (devIface && !onLink) return { err: 'Error: Nexthop has invalid gateway.' };
+    }
     if (r.gw && !r.dev) {
       var via = this.ifaceForNextHop(r.gw);
       if (!via && !r.onlink) return { err: 'RTNETLINK answers: Network is unreachable' };

@@ -36,7 +36,8 @@
       hints: lab.hints,
       brief: lab.brief,
       debrief: lab.debrief,
-      keySteps: lab.keySteps
+      keySteps: lab.keySteps,
+      solution: lab.solution || null
     };
     var all = [base];
     (lab.mutations || []).forEach(function (m, i) {
@@ -48,7 +49,8 @@
         hints: m.hints || lab.hints,
         brief: m.brief || lab.brief,
         debrief: m.debrief || lab.debrief,
-        keySteps: m.keySteps || lab.keySteps
+        keySteps: m.keySteps || lab.keySteps,
+        solution: m.solution || null
       });
     });
     return all;
@@ -132,6 +134,63 @@
       },
       log: function (hostName, unit, msg, prio) {
         world.get(hostName).log(unit, msg, prio);
+      },
+
+      /*
+       * Netplan хоста с правкой одного интерфейса: берётся текущая спецификация
+       * (после пересборки мира — эталон из топологии), поля patch заменяют
+       * одноимённые, значение null удаляет поле. Конфигурация записывается
+       * в файл и применяется, поэтому поломка переживает reboot.
+       *   h.netplanPatch('srv1', { addresses: ['192.168.10.20/28'] })
+       *   h.netplanPatch('srv1', { routes: null })            // убрать шлюз
+       */
+      netplanPatch: function (hostName, patch, opts) {
+        opts = opts || {};
+        var m = world.get(hostName);
+        var doc = U.clone(m.netplanSpec || { network: { version: 2, renderer: 'networkd', ethernets: {} } });
+        var eths = doc.network.ethernets = doc.network.ethernets || {};
+        var name = opts.iface || Object.keys(eths)[0] || 'ens33';
+        var dev = eths[name] = eths[name] || {};
+        Object.keys(patch || {}).forEach(function (k) {
+          if (NET.schema.isUnsafeKey(k)) return;
+          if (patch[k] === null) delete dev[k];
+          else dev[k] = U.clone(patch[k]);
+        });
+        this.writeNetplan(hostName, doc);
+        if (opts.apply !== false) this.applyNetplan(hostName);
+        return doc;
+      },
+
+      /* Файл целиком (root:root, по умолчанию 0644). */
+      writeFile: function (hostName, path, content, mode) {
+        world.get(hostName).vfs.write(path, content, NET.ROOTCTX, { mode: mode === undefined ? 0o644 : mode });
+      },
+
+      /* Дописать строки в конец файла (например, запись в /etc/hosts). */
+      appendFile: function (hostName, path, text) {
+        var m = world.get(hostName);
+        var cur = m.vfs.exists(path, NET.ROOTCTX) ? m.vfs.read(path, NET.ROOTCTX) : '';
+        if (cur && cur.charAt(cur.length - 1) !== '\n') cur += '\n';
+        m.vfs.write(path, cur + text + (/\n$/.test(text) ? '' : '\n'), NET.ROOTCTX);
+      },
+
+      /* Правка файла заменой (строка или RegExp), как sed -i. */
+      editFile: function (hostName, path, find, repl) {
+        var m = world.get(hostName);
+        var cur = m.vfs.read(path, NET.ROOTCTX);
+        var next = cur.replace(find, repl);
+        if (next === cur) throw new Error('editFile: в ' + path + ' нечего заменять');
+        m.vfs.write(path, next, NET.ROOTCTX);
+      },
+
+      /*
+       * Параметр ядра: сразу в работающую систему и, если указан файл,
+       * постоянно — в /etc/sysctl.d/<file>, чтобы значение пережило reboot.
+       */
+      sysctl: function (hostName, key, value, file) {
+        var m = world.get(hostName);
+        m.net.sysctl[key] = String(value);
+        if (file) this.appendFile(hostName, '/etc/sysctl.d/' + file, key + ' = ' + value);
       }
     };
   }

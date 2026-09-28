@@ -237,23 +237,23 @@
     return out;
   };
 
-  Firewall.prototype.renderIptablesList = function (chain, numeric, verbose) {
+  Firewall.prototype.renderIptablesList = function (chain, numeric, verbose, lineNumbers) {
     var self = this;
     var lines = [];
     var chains = chain ? [chain] : ['INPUT', 'FORWARD', 'OUTPUT'];
     chains.forEach(function (c) {
       var pol = self.ufw.enabled && c === 'INPUT' ? 'DROP' : self.policy[c];
       lines.push('Chain ' + c + ' (policy ' + pol + ')');
-      lines.push('target     prot opt source               destination         ');
+      lines.push((lineNumbers ? 'num  ' : '') + 'target     prot opt source               destination         ');
       var rules = c === 'INPUT' ? self.effectiveInput() : self.chains[c];
-      rules.forEach(function (r) {
+      rules.forEach(function (r, n) {
         var extra = [];
         if (r.dport) extra.push((r.proto === 'udp' ? 'udp' : 'tcp') + ' dpt:' + r.dport);
         if (r.sport) extra.push('spt:' + r.sport);
         if (r.states) extra.push('ctstate ' + r.states.join(','));
         if (r.iface) extra.push('in:' + r.iface);
         if (r.comment) extra.push('/* ' + r.comment + ' */');
-        lines.push(U.padRight(fmtTarget(r.target), 11) +
+        lines.push((lineNumbers ? U.padRight(String(n + 1), 5) : '') + U.padRight(fmtTarget(r.target), 11) +
           U.padRight(r.proto === 'all' ? 'all' : r.proto, 5) + '--  ' +
           U.padRight(r.src || 'anywhere', 21) +
           U.padRight(r.dst || 'anywhere', 20) +

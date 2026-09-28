@@ -242,6 +242,7 @@
 
   NET.theory = {
     get: function (id) { return cards[id] || null; },
+    add: card,
     list: function () {
       return Object.keys(cards).map(function (k) { return cards[k]; });
     },

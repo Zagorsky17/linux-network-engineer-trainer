@@ -90,14 +90,29 @@ const walks = {
   }
 };
 
+/*
+ * Новые лаборатории описывают эталон прямо в себе: поле solution — список
+ * команд оболочки (с диагностикой). Таблица выше — для первых десяти.
+ */
+function walkFor(lab) {
+  if (walks[lab.id]) return walks[lab.id];
+  if (Array.isArray(lab.solution) && lab.solution.length) {
+    return async () => { for (const line of lab.solution) await sh(line); };
+  }
+  return null;
+}
+
 (async () => {
   let fails = 0;
-  for (const id of Object.keys(walks)) {
+  const ids = NET.labs.list().map(l => l.id);
+  for (const id of ids) {
+    const walk = walkFor(NET.labs.get(id));
+    if (!walk) { console.log('FAIL ' + id + ': нет эталонного решения (поле solution в лаборатории)'); fails++; continue; }
     const res = NET.labs.start(id, { variant: 0 });
     if (res.err) { console.log('FAIL ' + id + ': ' + res.err); fails++; continue; }
     // вернуть сессию на основной хост
     NET.world.setCurrent('srv1');
-    await walks[id]();
+    await walk();
     const check = NET.labs.check();
     const st = NET.labs.stepStats();
     if (check.solved) {
@@ -109,6 +124,6 @@ const walks = {
       check.results.filter(r => !r.ok).forEach(r => console.log('    ✘ ' + r.title + ' — ' + (r.detail || '')));
     }
   }
-  console.log('\n===== walkthrough: ' + (Object.keys(walks).length - fails) + '/' + Object.keys(walks).length + ' лабораторий решаются эталонным путём =====');
+  console.log('\n===== walkthrough: ' + (ids.length - fails) + '/' + ids.length + ' лабораторий решаются эталонным путём =====');
   process.exit(fails ? 1 : 0);
 })();

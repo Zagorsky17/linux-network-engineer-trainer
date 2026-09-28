@@ -1,7 +1,8 @@
 # Linux Network Engineer Trainer
 
 Автономный офлайн-тренажёр для сетевого инженера: виртуальная Ubuntu 24.04,
-настоящая модель сети и 10 лабораторных работ по диагностике.
+настоящая модель сети и 15 лабораторных работ по диагностике
+(по уровням сложности от ★1 до ★5, на каждом уровне — несколько задач).
 HTML + CSS + чистый JavaScript, без сборки, сервера и интернета.
 
 ## Запуск
@@ -103,12 +104,13 @@ js/shell/             lexer → parser → expand → executor, completion,
 js/commands/          registry + cmdlib (общие помощники) + команды по группам (fs, text, sys, systemd,
                       apt, net_ip, net_diag, net_dns, net_cfg, net_fw,
                       net_capture, services_cmd, misc)
-js/labs/              engine, checks, lab01…lab10, pool (короткие задания)
+js/labs/              engine, checks, lab01…lab15, pool (короткие задания)
 js/learn/             skills, progress, srs, modes, theory (врезки в разборе),
-                      lessons (развёрнутые уроки), debrief
+                      lessons (развёрнутые уроки), method, quiz, debrief
+js/learn/content/     теория к lab11+: врезка, урок, методичка и тест в одном файле
 js/ui/                dom (безопасное построение DOM), terminal, читалка
                       теории, панели, палитра, шорткаты, app
-js/dev/selftest.js    ~290 проверок движка
+js/dev/selftest.js    ~640 проверок движка и контракта лабораторий
 ```
 
 ### Безопасность
@@ -164,23 +166,38 @@ NET.commands.register({
 В `ctx` доступны: `machine`, `world`, `vfs`, `net`, `fsctx` (права), `user`,
 `isRoot`, `cwd`, `env`, `stdin`, `sleep(ms)`, `aborted()`.
 
-**Новая лаборатория** — файл в `js/labs/`:
+**Новая лаборатория** — заготовку создаёт генератор (нужен Node.js):
+
+```sh
+node tools/new-lab.js lab16 "Название" 3     # id, название, сложность 1–5
+```
+
+Он кладёт два файла — сценарий `js/labs/lab16.js` и теорию
+`js/learn/content/lab16.js` — и сам прописывает их в `index.html` и
+`tools/files.json`. Незаполненное помечено TODO: пока метки есть, `selftest`
+перечисляет, чего не хватает. Сценарий выглядит так:
 
 ```js
 NET.labs.register({
-  id: 'lab11', title: '…', difficulty: 3, skills: ['routing', 'troubleshooting'],
-  brief: 'что известно инженеру', goal: 'что должно заработать',
-  setup: function (world, h) { /* внести поломку; h.writeNetplan/applyNetplan/log */ },
+  id: 'lab16', title: '…', difficulty: 3, skills: ['routing', 'troubleshooting'],
+  topology: 'campus', brief: 'что известно инженеру', goal: 'что должно заработать',
+  setup: function (world, h) { h.netplanPatch('srv1', { addresses: ['192.168.10.20/28'] }); },
   keySteps: [{ id: 'route', title: 'Посмотреть маршруты', match: /^ip\s+r/ }],
   checks: [NET.checks.canPing('srv1', '8.8.8.8')],
+  solution: ['ip -br a', '…команды эталонного решения…'],
   hints: ['направление', 'сужение', 'решение'],
-  debrief: { why: '…', commands: [['ip route', 'зачем']], theory: 'routing-basics' },
-  mutations: [{ name: 'другой вариант', setup: function (w, h) { /* … */ } }]
+  debrief: { why: '…', commands: [['ip route', 'зачем']], theory: 'subnet-mask' },
+  mutations: [{ name: 'другой вариант', setup: function (w, h) { /* … */ }, solution: ['…'] }]
 });
 ```
 
+`solution` — эталонное решение списком команд: по нему регрессионные прогоны
+проверяют, что задача и каждый её вариант решаемы, — править тесты не нужно.
+Помощники поломок `h`: `netplanPatch`, `writeFile`, `appendFile`, `editFile`,
+`sysctl`, `writeNetplan`, `applyNetplan`, `log`.
+
 Библиотека проверок в `js/labs/checks.js`: `canPing`, `tcpOpen`, `routeExists`,
-`defaultVia`, `ifaceUp`, `hasAddr`, `addrInSubnet`, `addrIsDynamic`,
+`tcpOpenByName`, `defaultVia`, `ifaceUp`, `hasAddr`, `addrInSubnet`, `addrIsDynamic`,
 `portListening`, `serviceActive`, `resolves`, `mtuIs`, `pathMtuOk`,
 `firewallAllows`, `survivesReboot`, `usedCommand`, `custom`.
 
@@ -188,11 +205,13 @@ NET.labs.register({
 L2-сегменты (их роль играют коммутаторы), машины с железом, постоянной
 конфигурацией и сервисами, плюс раскладка для SVG-схемы.
 
-**Новая теория** — короткая врезка в разборе добавляется карточкой в
-`js/learn/theory.js` (ссылка из `debrief.theory`), развёрнутый урок —
-объектом в `js/learn/lessons.js`: `lead`, `sections[{h, p[], cmds[], note, out}]`,
-`pitfalls`, `summary`, `practice`. Поле `lab` связывает урок с лабораторной,
-и он сразу появляется в панели задания и в разборе.
+**Новая теория** — к новой лаборатории всё лежит в `js/learn/content/labNN.js`:
+врезка для разбора (`NET.theory.add`, ссылка из `debrief.theory`), урок
+(`NET.lessons.register`: `lead`, `sections[{h, p[], cmds[], note, out}]`,
+`pitfalls`, `summary`, `practice`; поле `lab` связывает его с лабораторной),
+методичка (`NET.method.add`: разбор команд, сценарий, практика на стенде,
+решение, чек-лист, вопросы) и тест (`NET.quiz.add`, от 8 вопросов).
+Отдельную врезку без лабораторной можно добавить в `js/learn/theory.js`.
 
 ## Проверка после изменений
 
@@ -200,14 +219,15 @@ L2-сегменты (их роль играют коммутаторы), маш�
 selftest        в терминале приложения (или index.html?selftest=1)
 ```
 
-Проходит ~270 проверок: longest prefix match, ARP при неверной маске,
+Проходит ~640 проверок: longest prefix match, ARP при неверной маске,
 отсутствие default route, MTU blackhole, DROP против REJECT, DNS SERVFAIL и
 таймауты, аренда DHCP, persistence после reboot, права VFS, pipeline и
 exit codes, расчёт уровней, интервалы повторения, а также то, что каждый
-вариант каждой лаборатории действительно создаёт поломку.
+вариант каждой лаборатории действительно создаёт поломку, а у каждой
+лаборатории есть урок, методичка, тест и врезка теории.
 
 Если под рукой есть Node.js, в `tools/` лежат дополнительные прогоны (вывод
 команд, прохождение всех лабораторий и их вариантов, схема и миграции
 хранилища, загрузка интерфейса, безопасность) — см. `tools/README.md`.
-Всего около 900 автоматических проверок. Для работы самого тренажёра
+Всего около 1300 автоматических проверок. Для работы самого тренажёра
 Node.js не нужен.

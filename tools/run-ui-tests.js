@@ -49,7 +49,7 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   ok(!!NET.world, 'мир создан при загрузке');
   ok(text('term-out').indexOf('Linux Network Engineer Trainer') >= 0, 'баннер напечатан в терминале');
   ok(text('term-prompt').indexOf('user@ubuntu') >= 0, 'prompt отрисован', text('term-prompt'));
-  ok($('labs-list').childNodes.length === 10, 'в списке 10 лабораторий', String($('labs-list').childNodes.length));
+  ok($('labs-list').childNodes.length === NET.labs.list().length, 'в списке все ' + NET.labs.list().length + ' лабораторий', String($('labs-list').childNodes.length));
   ok($('modes-grid').childNodes.length === 6, 'в панели 6 режимов');
   ok($('skills-list').childNodes.length === 13, 'в панели 13 навыков');
   ok(text('level-chip').indexOf('Beginner') >= 0, 'уровень Beginner на старте', text('level-chip'));

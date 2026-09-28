@@ -576,6 +576,25 @@
     run: function (ctx) {
       var p = A.parse(ctx.argv, { bool: ['a', 'w', 'p'] });
       var sc = ctx.machine.net.sysctl;
+      /* sysctl -p [FILE] и sysctl --system — перечитать постоянную конфигурацию */
+      if (p.flags.p || p.flags.system) {
+        if (!ctx.isRoot) return ctx.fail('sysctl: permission denied on key "net.ipv4.ip_forward"', 1);
+        var files = p.flags.system ? ctx.machine.sysctlFiles() : [p.rest[0] || '/etc/sysctl.conf'];
+        var bad = files.filter(function (f) { return !ctx.machine.vfs.exists(f, NET.ROOTCTX); });
+        if (!p.flags.system && bad.length) {
+          return ctx.fail('sysctl: cannot open "' + bad[0] + '": No such file or directory', 255);
+        }
+        var applied = ctx.machine.loadSysctl(files);
+        var shown = {};
+        files.forEach(function (f) {
+          if (p.flags.system && bad.indexOf(f) < 0) ctx.line('* Applying ' + f + ' ...');
+          applied.forEach(function (a) {
+            if (a.file === f) { ctx.line(a.key + ' = ' + a.value); shown[a.key] = true; }
+          });
+        });
+        if (shown['net.ipv4.ip_forward']) ctx.machine.log('kernel', 'ip_forward set to ' + sc['net.ipv4.ip_forward']);
+        return 0;
+      }
       if (p.flags.a || !p.rest.length) {
         Object.keys(sc).sort().forEach(function (k) { ctx.line(k + ' = ' + sc[k]); });
         return 0;
