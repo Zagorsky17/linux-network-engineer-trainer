@@ -130,6 +130,20 @@
   align-items: center;
   padding: 0 0 6px 6px;
 }
+/*
+ * Правая колонка узкая: кнопки действий не помещаются рядом с вкладками.
+ * Выносим их отдельной строкой НАД вкладками — вкладки остаются нижним
+ * рядом и примыкают к своему содержимому.
+ */
+#right-tabs .tabs-right {
+  order: -1;
+  flex: 1 0 100%;
+  margin-left: 0;
+  justify-content: flex-start;
+  padding: 0 0 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-soft);
+}
 
 .tabpane { display: none; flex: 1 1 auto; min-height: 0; overflow: auto; }
 .tabpane.active { display: flex; flex-direction: column; }
