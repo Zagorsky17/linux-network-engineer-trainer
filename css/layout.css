@@ -101,8 +101,11 @@
   background: #0f1620;
   border-bottom: 1px solid var(--border-soft);
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: flex-end;
 }
-.tabs button {
+/* Только вкладки (прямые потомки): кнопки в .tabs-right остаются обычными .btn */
+.tabs > button {
   border: 1px solid transparent;
   border-bottom: none;
   background: transparent;
@@ -112,13 +115,21 @@
   cursor: pointer;
   font-size: 12px;
 }
-.tabs button:hover { background: var(--bg-hover); color: var(--fg); }
-.tabs button.active {
+.tabs > button:hover { background: var(--bg-hover); color: var(--fg); }
+.tabs > button.active {
   background: var(--bg-panel);
   border-color: var(--border);
   color: var(--fg);
 }
-.tabs .tabs-right { margin-left: auto; display: flex; gap: 6px; align-items: center; padding-bottom: 6px; }
+.tabs .tabs-right {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  align-items: center;
+  padding: 0 0 6px 6px;
+}
 
 .tabpane { display: none; flex: 1 1 auto; min-height: 0; overflow: auto; }
 .tabpane.active { display: flex; flex-direction: column; }
