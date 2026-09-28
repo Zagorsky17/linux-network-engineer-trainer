@@ -128,7 +128,8 @@
           { name: 'eth0', segment: 'transit', addrs: ['203.0.113.1/30'] },
           {
             name: 'eth1', segment: 'inet',
-            addrs: ['8.8.8.1/24', '93.184.216.1/24', '185.125.190.1/24', '1.1.1.1/24', '142.250.185.1/24']
+            addrs: ['8.8.8.1/24', '93.184.216.1/24', '185.125.190.1/24', '1.1.1.1/24', '142.250.185.1/24',
+              '198.51.100.1/24']
           }
         ],
         routes: [{ dst: '192.168.10.0', prefix: 24, gw: '203.0.113.2', dev: 'eth0', proto: 'static' }],
@@ -192,6 +193,23 @@
           '/ubuntu/dists/noble/Release': { status: 200, body: 'Origin: Ubuntu\nSuite: noble\nCodename: noble\n' }
         }
       },
+      /*
+       * Внешний нарушитель для раздела «Безопасность»: одна машина с набором
+       * адресов 198.51.100.0/24 играет и сканер, и ботнет, и C2-сервер.
+       * .200 — «удалённый администратор», легитимный клиент из интернета.
+       * Консоли нет: атаки запускают сценарии лабораторий (lab.attack).
+       */
+      {
+        name: 'attacker', hostname: 'unknown-host', kind: 'host', shell: false, latency: 22,
+        ifaces: [{
+          name: 'eth0', segment: 'inet',
+          addrs: ['198.51.100.66/24', '198.51.100.67/24', '198.51.100.68/24', '198.51.100.69/24',
+            '198.51.100.70/24', '198.51.100.77/24', '198.51.100.200/24']
+        }],
+        routes: [{ dst: 'default', gw: '198.51.100.1', dev: 'eth0', proto: 'static' }],
+        services: [{ name: 'nginx', state: 'active' }, 'ssh'],
+        http: { '/': { status: 200, body: 'ok\n' } }
+      },
       {
         name: 'rtr2', hostname: 'branch-rtr', kind: 'router', router: true, shell: false, latency: 1.2,
         ifaces: [
@@ -223,7 +241,8 @@
         { id: 'dns8', label: '8.8.8.8', x: 250, y: -104, w: 90, h: 36, role: 'dns' },
         { id: 'web1', label: 'web 93.184.216.34', x: 360, y: -104, w: 150, h: 36, role: 'server' },
         { id: 'rtr2', label: 'rtr2\n10.99.0.2', x: 372, y: 196, w: 120, h: 40, role: 'router' },
-        { id: 'branch-srv', label: 'branch-srv\n10.20.5.10', x: 372, y: 262, w: 120, h: 40, role: 'host' }
+        { id: 'branch-srv', label: 'branch-srv\n10.20.5.10', x: 372, y: 262, w: 120, h: 40, role: 'host' },
+        { id: 'attacker', label: 'нарушитель\n198.51.100.0/24', x: 530, y: -104, w: 130, h: 36, role: 'attacker' }
       ],
       links: [
         { from: 'srv1', to: 'lan', seg: 'lan' },
@@ -234,6 +253,7 @@
         { from: 'isp', to: 'inet', seg: 'inet' },
         { from: 'inet', to: 'dns8', seg: 'inet' },
         { from: 'inet', to: 'web1', seg: 'inet' },
+        { from: 'inet', to: 'attacker', seg: 'inet' },
         { from: 'gw', to: 'rtr2', seg: 'transit2' },
         { from: 'rtr2', to: 'branch-srv', seg: 'branch' }
       ]

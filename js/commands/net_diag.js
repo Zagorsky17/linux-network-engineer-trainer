@@ -284,6 +284,15 @@
         return 0;
       }
       var rows = socketRows(ctx, { tcp: p.flags.t, udp: p.flags.u, listening: p.flags.l, all: p.flags.a });
+      /* фильтр состояния: ss -tan state syn-recv / established / listening */
+      var si = p.rest.indexOf('state');
+      if (si >= 0 && p.rest[si + 1]) {
+        var want = { 'syn-recv': 'SYN-RECV', 'established': 'ESTAB', 'listening': 'LISTEN', 'time-wait': 'TIME-WAIT' }[p.rest[si + 1]];
+        if (!want) return ctx.fail('ss: wrong state name: ' + p.rest[si + 1], 1);
+        rows = ctx.machine.net.sockets.filter(function (s) {
+          return s.state === want && (!p.flags.t || s.proto === 'tcp') && (!p.flags.u || s.proto === 'udp');
+        });
+      }
       var showProc = p.flags.p;
       ctx.line(U.padRight('Netid', 6) + U.padRight('State', 8) + U.pad('Recv-Q', 7) + U.pad('Send-Q', 7) + ' ' +
         U.padRight('Local Address:Port', 30) + U.padRight('Peer Address:Port', 24) + (showProc ? 'Process' : ''));
@@ -415,6 +424,9 @@
 
   /* ---------- curl / wget ---------- */
 
+  function p0(opts) { return opts && opts.flags && opts.flags.I ? 'HEAD' : 'GET'; }
+  var REASON = { 200: 'OK', 400: 'Bad Request', 403: 'Forbidden', 404: 'Not Found' };
+
   function httpFetch(ctx, url, opts) {
     opts = opts || {};
     var m = String(url).match(/^(?:(https?):\/\/)?([^\/:]+)(?::(\d+))?(\/.*)?$/);
@@ -434,19 +446,12 @@
     var unit = node.services.byPort(port, 'tcp');
     if (unit && unit.state !== 'active') return { err: 'connect', ip: res.ip, host: host, port: port, net: { error: E.REFUSED }, code: 7 };
 
-    var pages = node.http || {};
-    var page = pages[path];
-    if (!page) {
-      var nodePath = path.replace(/\/$/, '');
-      page = pages[nodePath] || null;
+    var page = NET.httpd.serve(node, path);
+    var srcIP = tcp.src || (ctx.machine.net.lookupRoute(res.ip) || {}).src || ctx.machine.net.primaryIP();
+    NET.httpd.log(node, srcIP, p0(opts), path, page.status || 200, (page.body || '').length, 'curl/8.5.0');
+    if ((page.status || 200) !== 200) {
+      return { status: page.status, host: host, ip: res.ip, port: port, body: page.body, server: 'nginx/1.24.0' };
     }
-    if (!page && path === '/') {
-      try {
-        var body = node.vfs.read('/var/www/html/index.html', NET.ROOTCTX);
-        page = { status: 200, body: body };
-      } catch (e) { page = null; }
-    }
-    if (!page) return { status: 404, host: host, ip: res.ip, port: port, body: '<html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>\n', server: 'nginx/1.24.0' };
 
     /* большой ответ проверяет MTU по пути: тут и всплывает blackhole */
     var size = page.size || page.body.length;
@@ -504,10 +509,10 @@
           ctx.errLine('> Host: ' + r.host);
           ctx.errLine('> User-Agent: curl/8.5.0');
           ctx.errLine('>');
-          ctx.errLine('< HTTP/1.1 ' + r.status + (r.status === 200 ? ' OK' : ' Not Found'));
+          ctx.errLine('< HTTP/1.1 ' + r.status + ' ' + (REASON[r.status] || ''));
         }
         if (p.flags.I) {
-          ctx.line('HTTP/1.1 ' + r.status + (r.status === 200 ? ' OK' : ' Not Found'));
+          ctx.line('HTTP/1.1 ' + r.status + ' ' + (REASON[r.status] || ''));
           ctx.line('Server: ' + r.server);
           ctx.line('Date: ' + new Date().toUTCString());
           ctx.line('Content-Type: text/html');

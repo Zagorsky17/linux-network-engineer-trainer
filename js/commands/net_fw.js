@@ -87,12 +87,14 @@
       if (sub === 'enable') {
         fw.ufw.enabled = true;
         ctx.machine.services.start('ufw');
+        ctx.machine.services.enable('ufw');   // «and enabled on system startup»
         ctx.machine.log('ufw', 'Firewall enabled; default incoming policy: ' + fw.ufw.defaults.incoming);
         ctx.line('Firewall is active and enabled on system startup');
         return 0;
       }
       if (sub === 'disable') {
         fw.ufw.enabled = false;
+        ctx.machine.services.disable('ufw');
         ctx.machine.log('ufw', 'Firewall stopped and disabled on system startup');
         ctx.line('Firewall stopped and disabled on system startup');
         return 0;
@@ -124,20 +126,34 @@
         if (/^\d+$/.test(argv[1])) r = fw.ufwDelete({ num: Number(argv[1]) });
         else {
           var parsed = parseUfwRule(argv.slice(1));
-          r = fw.ufwDelete({ port: parsed.port, proto: parsed.proto });
+          r = fw.ufwDelete({ port: parsed.port, proto: parsed.proto,
+            action: ['allow', 'deny', 'reject', 'limit'].indexOf(parsed.action) >= 0 ? parsed.action : undefined,
+            direction: parsed.direction, from: parsed.from, to: parsed.to });
         }
         if (r.err) { ctx.errLine('ERROR: ' + r.err); return 1; }
         ctx.line('Rule deleted');
         return 0;
       }
 
+      /* ufw insert N <правило> */
+      var insertAt;
+      if (sub === 'insert') {
+        insertAt = NET.cmdlib.intArg(ctx, 'ufw', argv[1], 0, { min: 1, max: 10000, notify: false });
+        if (!insertAt) return ctx.fail('ERROR: Invalid position \'' + (argv[1] || '') + '\'', 1);
+        if (insertAt > fw.ufw.rules.length && fw.ufw.rules.length) {
+          return ctx.fail('ERROR: Invalid position \'' + insertAt + '\'', 1);
+        }
+        argv = argv.slice(2);
+        sub = argv[0];
+      }
+
       if (['allow', 'deny', 'reject', 'limit'].indexOf(sub) >= 0) {
         var rule = parseUfwRule(argv);
-        if (rule.port === null && rule.from === 'any') {
+        if (rule.port === null && rule.from === 'any' && rule.to === 'any') {
           ctx.errLine('ERROR: Wrong number of arguments');
           return 1;
         }
-        var res = fw.ufwAdd(rule);
+        var res = fw.ufwAdd(rule, insertAt ? { index: insertAt - 1 } : {});
         ctx.line(res.dup ? 'Skipping adding existing rule' : 'Rule added');
         ctx.machine.log('ufw', 'rule ' + sub + ' ' + (rule.port || 'any') + '/' + rule.proto +
           ' from ' + rule.from);
@@ -301,6 +317,91 @@
       }
       ctx.errLine('Error: syntax error, unexpected end of file');
       return 1;
+    }
+  });
+
+  /* ---------- fail2ban-client ---------- */
+
+  reg({
+    name: 'fail2ban-client', category: 'firewall', summary: 'управление fail2ban',
+    usage: 'fail2ban-client {status [JAIL]|set JAIL unbanip IP|set JAIL banip IP|reload|ping}',
+    complete: function (ctx, word, argv) {
+      if (argv.length <= 1) return ['status', 'set', 'reload', 'ping', 'get'];
+      if (argv[1] === 'status' || argv[1] === 'set') return ['sshd'];
+      if (argv[1] === 'set' && argv.length === 3) return ['unbanip', 'banip'];
+      return [];
+    },
+    run: function (ctx) {
+      var m = ctx.machine;
+      var argv = ctx.argv;
+      if (!m.services.get('fail2ban')) {
+        return ctx.fail('fail2ban-client: command not found', 127);
+      }
+      if (!NET.fail2ban.running(m)) {
+        return ctx.fail("Failed to access socket path: /var/run/fail2ban/fail2ban.sock.\n" +
+          'Is fail2ban running?', 255);
+      }
+      var st = NET.fail2ban.state(m);
+      var sub = argv[0] || 'status';
+
+      if (sub === 'ping') { ctx.line('Server replied: pong'); return 0; }
+      if (sub === 'reload') {
+        m.services.restart('fail2ban');
+        ctx.line('OK');
+        return 0;
+      }
+
+      if (sub === 'status') {
+        var jail = argv[1];
+        if (!jail) {
+          var enabled = st.conf && st.conf.sshd.enabled;
+          ctx.line('Status');
+          ctx.line('|- Number of jail:      ' + (enabled ? 1 : 0));
+          ctx.line('`- Jail list:          ' + (enabled ? ' sshd' : ''));
+          return 0;
+        }
+        if (jail !== 'sshd' || !st.conf || !st.conf.sshd.enabled) {
+          ctx.errLine("Sorry but the jail '" + jail + "' does not exist");
+          return 255;
+        }
+        var banned = st.banned;
+        ctx.line('Status for the jail: sshd');
+        ctx.line('|- Filter');
+        ctx.line('|  |- Currently failed: ' + Object.keys(st.fails).filter(function (ip) {
+          return banned.indexOf(ip) < 0;
+        }).length);
+        ctx.line('|  |- Total failed:     ' + st.totalFailed);
+        ctx.line('|  `- Journal matches:  _SYSTEMD_UNIT=ssh.service + _COMM=sshd');
+        ctx.line('`- Actions');
+        ctx.line('   |- Currently banned: ' + banned.length);
+        ctx.line('   |- Total banned:     ' + st.totalBanned);
+        ctx.line('   `- Banned IP list:   ' + banned.join(' '));
+        return 0;
+      }
+
+      if (sub === 'set') {
+        if (!ctx.isRoot) return ctx.fail('fail2ban-client: Permission denied', 255);
+        var name = argv[1], action = argv[2], ip = argv[3];
+        if (name !== 'sshd') { ctx.errLine("Sorry but the jail '" + name + "' does not exist"); return 255; }
+        if (action === 'unbanip') {
+          if (!NET.fail2ban.unban(m, ip)) {
+            ctx.errLine(ip + ' is not banned');
+            return 255;
+          }
+          ctx.line(ip);
+          return 0;
+        }
+        if (action === 'banip') {
+          NET.fail2ban.ban(m, ip);
+          ctx.line('1');
+          return 0;
+        }
+        ctx.errLine('Invalid command (no set action or not yet implemented)');
+        return 255;
+      }
+
+      ctx.errLine('Invalid command');
+      return 255;
     }
   });
 })(window.NET);

@@ -108,6 +108,31 @@
       return { ok: true, at: node, kind: 'echo-reply' };
     }
 
+    /*
+     * Флуд (сценарии безопасности): quirks.flood = {kind, port, sources}.
+     *   syn  — очередь полуоткрытых соединений забита подделанными SYN;
+     *          спасают только SYN cookies (net.ipv4.tcp_syncookies = 1);
+     *   conn — служба исчерпана соединениями с адресов sources; помогает
+     *          всё, что не пускает их к службе (deny, limit, fail2ban).
+     */
+    var floods = (node.quirks && node.quirks.floods) || [];
+    for (var fi = 0; fi < floods.length; fi++) {
+      var fl = floods[fi];
+      if (pkt.proto !== 'tcp' || Number(fl.port) !== Number(pkt.dport) || (pkt.ct || 'NEW') !== 'NEW') continue;
+      if (fl.kind === 'syn' && node.net.sysctl['net.ipv4.tcp_syncookies'] !== '1') {
+        return { ok: false, error: E.TIMEOUT, at: node, flooded: true };
+      }
+      if (fl.kind === 'conn') {
+        var reaches = (fl.sources || []).some(function (s) {
+          return node.fw.evaluate('INPUT', {
+            proto: 'tcp', src: s, dst: pkt.dst, dport: pkt.dport, ct: 'NEW',
+            inIface: inIface ? inIface.name : 'ens33', dry: true, flood: true
+          }) === 'ACCEPT';
+        });
+        if (reaches) return { ok: false, error: E.TIMEOUT, at: node, flooded: true };
+      }
+    }
+
     var sock = node.net.listening(pkt.dport, pkt.proto, pkt.dst);
     if (!sock) {
       if (pkt.proto === 'tcp') return { ok: false, error: E.REFUSED, at: node, rst: true };

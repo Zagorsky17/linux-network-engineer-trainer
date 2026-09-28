@@ -224,12 +224,21 @@
     usage: 'useradd [-m] [-G group] [-s shell] NAME',
     run: function (ctx) {
       if (!ctx.isRoot) return ctx.fail('useradd: Permission denied.');
-      var p = A.parse(ctx.argv, { bool: ['m', 'r'], value: ['G', 's', 'g', 'd', 'c'] });
+      var p = A.parse(ctx.argv, { bool: ['m', 'r', 'o'], value: ['G', 's', 'g', 'd', 'c', 'u'] });
       var name = p.rest[0];
       if (!name) return ctx.usageError('Usage: useradd [options] LOGIN');
       if (ctx.machine.users.byName(name)) return ctx.fail('useradd: user \'' + name + '\' already exists', 9);
+      var uid;
+      if (p.opts.u !== undefined) {
+        uid = NET.cmdlib.intArg(ctx, 'useradd', p.opts.u, null, { min: 0, max: 65535, notify: false });
+        if (uid === null) return 1;
+        /* без -o занятый uid не даётся: именно так создают «второго root» осознанно */
+        if (!p.flags.o && ctx.machine.users.byUid(uid)) {
+          return ctx.fail('useradd: UID ' + uid + ' is not unique', 4);
+        }
+      }
       var u = ctx.machine.users.addUser({
-        name: name, shell: p.opts.s || '/bin/bash', home: p.opts.d || ('/home/' + name),
+        name: name, uid: uid, shell: p.opts.s || '/bin/bash', home: p.opts.d || ('/home/' + name),
         extraGroups: p.opts.G ? p.opts.G.split(',') : [], gecos: p.opts.c || ''
       });
       if (p.flags.m) {
@@ -259,6 +268,47 @@
         });
       }
       if (p.opts.s) u.shell = p.opts.s;
+      return 0;
+    }
+  });
+
+  reg({
+    name: 'userdel', aliases: ['deluser'], category: 'sys', summary: 'удалить пользователя',
+    usage: 'userdel [-r] NAME',
+    complete: function (ctx, word) {
+      return ctx.machine.users.users.map(function (u) { return u.name; })
+        .filter(function (n) { return n.indexOf(word) === 0; });
+    },
+    run: function (ctx) {
+      if (!ctx.isRoot) return ctx.fail('userdel: Permission denied.');
+      var p = A.parse(ctx.argv, { bool: ['r', 'f'] });
+      var name = p.rest[0];
+      if (!name) return ctx.usageError('Usage: userdel [options] LOGIN');
+      var u = ctx.machine.users.byName(name);
+      if (!u) return ctx.fail("userdel: user '" + name + "' does not exist", 6);
+      if (name === ctx.session.user && !p.flags.f) {
+        return ctx.fail("userdel: user " + name + ' is currently used by process 1', 8);
+      }
+      var home = u.home;
+      var r = ctx.machine.users.delUser(name);
+      if (r.err) return ctx.fail('userdel: ' + r.err, 8);
+      if (p.flags.r) {
+        NET.errors.attempt('userdel.home', function () {
+          ctx.vfs.unlink(home, NET.ROOTCTX, { recursive: true });
+        }, null, { silent: true, level: 'warn' });
+      }
+      ctx.machine.log('userdel', 'delete user \'' + name + '\'');
+      return 0;
+    }
+  });
+
+  reg({
+    name: 'groupdel', category: 'sys', summary: 'удалить группу', usage: 'groupdel NAME',
+    run: function (ctx) {
+      if (!ctx.isRoot) return ctx.fail('groupdel: Permission denied.');
+      if (!ctx.argv[0]) return ctx.usageError('Usage: groupdel GROUP');
+      var r = ctx.machine.users.delGroup(ctx.argv[0]);
+      if (r.err) return ctx.fail('groupdel: ' + r.err, 8);
       return 0;
     }
   });
@@ -631,6 +681,70 @@
       ctx.line('После перезагрузки применена только постоянная конфигурация ' +
         '(/etc/netplan, NetworkManager, включённые юниты).');
       NET.bus.emit('machine:rebooted', { machine: ctx.machine.name });
+      return 0;
+    }
+  });
+
+  /*
+   * last / lastb — аудит входов. Данных wtmp у нас нет, поэтому список
+   * строится из журнала sshd: Accepted — успешные, Failed — неудачные.
+   * Это ровно та проверка, с которой начинают разбор инцидента:
+   * «попытки были, а вошёл ли кто-нибудь?»
+   */
+  function loginRows(m, bad) {
+    var re = bad ? /Failed password for (?:invalid user )?(\S+) from (\S+)/ : /Accepted (\w+) for (\S+) from (\S+)/;
+    var rows = [];
+    m.journal.forEach(function (l) {
+      if (l.unit !== 'sshd') return;
+      var mm = String(l.msg).match(re);
+      if (!mm) return;
+      rows.push({
+        user: bad ? mm[1] : mm[2],
+        host: bad ? mm[2] : mm[3],
+        how: bad ? null : mm[1],
+        ts: l.ts
+      });
+    });
+    return rows.reverse();
+  }
+
+  reg({
+    name: 'who', aliases: ['w'], category: 'sys', summary: 'кто сейчас в системе', usage: 'who [-a]',
+    run: function (ctx) {
+      var m = ctx.machine;
+      if (ctx.argv0 === 'w') {
+        ctx.line(' ' + new Date().toTimeString().slice(0, 8) + ' up ' + m.procs.uptimeString() +
+          ',  1 user,  load average: 0.08, 0.12, 0.09');
+        ctx.line('USER     TTY      FROM             LOGIN@   IDLE   WHAT');
+        ctx.line(U.padRight(ctx.user, 9) + U.padRight('pts/0', 9) + U.padRight('192.168.10.30', 17) +
+          U.padRight(U.lsTime(m.procs.bootTime).slice(-5), 9) + U.padRight('0.00s', 7) + '-bash');
+        return 0;
+      }
+      ctx.line(U.padRight(ctx.user, 9) + U.padRight('pts/0', 9) + U.lsTime(m.procs.bootTime) +
+        ' (192.168.10.30)');
+      return 0;
+    }
+  });
+
+  reg({
+    name: 'last', aliases: ['lastb'], category: 'sys', summary: 'история входов в систему',
+    usage: 'last [-n N] [-a] [USER]',
+    run: function (ctx) {
+      var p = A.parse(ctx.argv, { bool: ['a', 'i', 'F', 'w', 'x'], value: ['n'] });
+      var bad = ctx.argv0 === 'lastb';
+      if (bad && !ctx.isRoot) return ctx.fail('lastb: /var/log/btmp: Permission denied', 1);
+      var limit = NET.cmdlib.intArg(ctx, 'last', p.opts.n, 20, { min: 1, max: 1000, notify: false });
+      if (limit === null) return 1;
+      var rows = loginRows(ctx.machine, bad);
+      if (p.rest.length) {
+        rows = rows.filter(function (r) { return r.user === p.rest[0]; });
+      }
+      rows.slice(0, limit).forEach(function (r) {
+        ctx.line(U.padRight(r.user, 9) + U.padRight(bad ? 'ssh:notty' : 'pts/0', 10) +
+          U.padRight(r.host, 17) + U.lsTime(r.ts) + (bad ? '' : '   still logged in'));
+      });
+      if (rows.length) ctx.line('');
+      ctx.line((bad ? 'btmp' : 'wtmp') + ' begins ' + U.lsTime(ctx.machine.procs.bootTime));
       return 0;
     }
   });

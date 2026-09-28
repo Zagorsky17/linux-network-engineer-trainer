@@ -125,6 +125,9 @@
         onStart: function (m, u) {
           var conf = '';
           try { conf = m.vfs.read('/etc/ssh/sshd_config', ROOT); } catch (e) {}
+          /* действующие параметры фиксируются при старте: правка файла без
+             перезапуска службы ничего не меняет — как у настоящего sshd */
+          m.sshdEffective = sshdOptions(m);
           var pm = conf.match(/^\s*Port\s+(\d+)/m);
           var port = pm ? Number(pm[1]) : 22;
           /* ListenAddress ограничивает адреса, на которых sshd принимает соединения */
@@ -267,6 +270,11 @@
     this.services.list().forEach(function (u) {
       if (u.enabled) self.services.start(u.name);
     });
+    /* ufw поднимается своим юнитом: не включён в автозапуск — правил после загрузки нет */
+    if (this.fw.ufw.enabled && !this.services.isEnabled('ufw')) {
+      this.fw.ufw.enabled = false;
+      this.log('systemd', 'ufw.service is disabled; firewall not started');
+    }
     this.log('systemd', 'Booting Ubuntu ' + this.osRelease);
 
     /* netplan из файлов — источник истины */
@@ -323,6 +331,46 @@
     });
     return applied;
   };
+
+  /*
+   * Параметры sshd так, как их видит sshd -T: Include разворачивается на месте,
+   * для каждого ключа действует ПЕРВОЕ встреченное значение. Поэтому файл из
+   * sshd_config.d (подключается в начале) перекрывает строку ниже в sshd_config.
+   */
+  function sshdOptions(m) {
+    var opts = {};
+    function take(text) {
+      String(text || '').split('\n').forEach(function (raw) {
+        var line = raw.replace(/#.*$/, '').trim();
+        if (!line) return;
+        var mm = line.match(/^(\S+)\s+(.+)$/);
+        if (!mm) return;
+        var key = mm[1].toLowerCase(), val = mm[2].trim();
+        if (key === 'include') {
+          var dir = val.replace(/\/\*\.conf$/, '');
+          if (!m.vfs.exists(dir, ROOT)) return;
+          m.vfs.list(dir, ROOT).forEach(function (e) {
+            if (!/\.conf$/.test(e.name)) return;
+            take(NET.errors.attempt('sshd.include', function () { return m.vfs.read(e.path, ROOT); }, '',
+              { silent: true, level: 'warn' }));
+          });
+          return;
+        }
+        if (NET.schema.isUnsafeKey(key)) return;
+        if (opts[key] === undefined) opts[key] = val;
+      });
+    }
+    take(NET.errors.attempt('sshd.config', function () { return m.vfs.read('/etc/ssh/sshd_config', ROOT); }, '',
+      { silent: true, level: 'warn' }));
+    return {
+      permitrootlogin: (opts.permitrootlogin || 'prohibit-password').toLowerCase(),
+      passwordauthentication: (opts.passwordauthentication || 'yes').toLowerCase(),
+      pubkeyauthentication: (opts.pubkeyauthentication || 'yes').toLowerCase(),
+      maxauthtries: opts.maxauthtries || '6',
+      allowusers: opts.allowusers || null,
+      port: opts.port || '22'
+    };
+  }
 
   /*
    * Директивы listen из /etc/nginx/sites-enabled/*: «80», «443 ssl»,
@@ -411,8 +459,8 @@
       '/proc', '/proc/net', '/proc/sys', '/proc/sys/net', '/proc/sys/net/ipv4',
       '/root', '/run', '/run/systemd', '/run/systemd/resolve', '/sbin', '/srv', '/sys',
       '/sys/class', '/sys/class/net', '/tmp', '/usr', '/usr/bin', '/usr/sbin', '/usr/share',
-      '/usr/share/doc', '/usr/local', '/usr/local/bin', '/var', '/var/log', '/var/lib',
-      '/var/lib/dhcp', '/var/lib/systemd', '/var/spool', '/var/spool/cron',
+      '/usr/share/doc', '/usr/local', '/usr/local/bin', '/usr/lib', '/usr/lib/openssh', '/var', '/var/log', '/var/lib',
+      '/var/lib/dhcp', '/var/lib/systemd', '/var/log/nginx', '/var/spool', '/var/spool/cron',
       '/var/spool/cron/crontabs', '/var/www', '/var/www/html', '/var/tmp'
     ];
     dirs.forEach(function (d) { v.mkdir(d, ROOT, { parents: true, mode: 0o755 }); });
@@ -627,6 +675,18 @@
       '</body></html>'
     ].join('\n') + '\n', 0o644, 33, 33);
 
+    /* исполняемые файлы-заглушки: базовый список SUID для сравнения при аудите */
+    ['/usr/bin/bash', '/usr/bin/ls', '/usr/bin/cat', '/usr/bin/curl', '/usr/bin/python3'].forEach(function (b) {
+      put(b, '\x7fELF (stub)\n', 0o755);
+    });
+    ['/usr/bin/sudo', '/usr/bin/passwd', '/usr/bin/su', '/usr/bin/mount', '/usr/bin/umount',
+      '/usr/bin/chsh', '/usr/bin/newgrp', '/usr/bin/gpasswd', '/usr/lib/openssh/ssh-keysign'].forEach(function (b) {
+      put(b, '\x7fELF (stub)\n', 0o4755);
+    });
+
+    put('/var/log/nginx/access.log', '', 0o640, 33, 4);
+    put('/var/log/nginx/error.log', '', 0o640, 33, 4);
+
     put('/etc/sysctl.conf', [
       '# /etc/sysctl.conf - Configuration file for setting system variables',
       '#net.ipv4.ip_forward=1',
@@ -751,7 +811,11 @@
       dhcp: this.dhcp ? U.clone(this.dhcp) : null,
       quirks: U.clone(this.quirks),
       sysctl: U.clone(this.net.sysctl),
-      env: U.clone(this.env)
+      env: U.clone(this.env),
+      users: U.clone({ users: this.users.users, groups: this.users.groups,
+        nextUid: this.users.nextUid, nextGid: this.users.nextGid }),
+      f2b: this.f2b ? U.clone(this.f2b) : null,
+      sshdEffective: this.sshdEffective ? U.clone(this.sshdEffective) : null
     };
   };
 
@@ -771,7 +835,20 @@
     if (s.dhcp) this.dhcp = U.clone(s.dhcp);
     this.quirks = U.clone(s.quirks);
     this.env = U.clone(s.env);
+    if (s.users) {
+      var us = U.clone(s.users);
+      this.users.users = us.users; this.users.groups = us.groups;
+      this.users.nextUid = us.nextUid; this.users.nextGid = us.nextGid;
+    }
+    this.f2b = s.f2b ? U.clone(s.f2b) : null;
+    this.sshdEffective = s.sshdEffective ? U.clone(s.sshdEffective) : null;
   };
+
+  /* Действующие параметры sshd (после последнего старта службы). */
+  Machine.prototype.sshdConfig = function () {
+    return this.sshdEffective || sshdOptions(this);
+  };
+  Machine.prototype.sshdFileConfig = function () { return sshdOptions(this); };
 
   NET.Machine = Machine;
   NET.ROOTCTX = ROOT;

@@ -69,6 +69,7 @@
       testLimits(r);
       testLessons(r);
       testMethod(r);
+      testSecurityPlaybook(r);
       testQuiz(r);
       testSchema(r);
       testLabs(r);
@@ -701,6 +702,28 @@
     if (!readBefore) delete NET.progress.get().lessons.lab01;
   }
 
+  /* ---------- алгоритм реакции на атаку ---------- */
+
+  function testSecurityPlaybook(r) {
+    r.section('security: алгоритм реакции на атаку');
+    var S = NET.method.security;
+    r.ok(!!S, 'алгоритм реакции на атаку определён');
+    if (!S) return;
+    r.ok(S.steps.length >= 6, 'не меньше 6 шагов реакции', String(S.steps.length));
+    r.ok(S.steps.every(function (st) { return st.layer && st.q && st.cmds.length && st.pass && st.fail; }),
+      'у каждого шага есть вопрос, команды и оба исхода');
+    r.ok(S.symptoms.length >= 8 && S.symptoms.every(function (row) { return row.length === 3; }),
+      'словарь признаков атаки: признак → что значит → чем проверить');
+    r.ok(S.principles.length >= 4, 'сформулированы принципы реакции');
+    /* уроки раздела получают именно этот алгоритм, а не диагностический */
+    var secLesson = NET.lessons.forLab('sec01');
+    r.ok(!!secLesson && NET.method.playbookFor(secLesson.id) === S,
+      'уроки раздела «Безопасность» используют алгоритм реакции');
+    var diagLesson = NET.lessons.forLab('lab01');
+    r.ok(!!diagLesson && NET.method.playbookFor(diagLesson.id) === NET.method.universal,
+      'уроки диагностики используют алгоритм поиска неисправности');
+  }
+
   /* ---------- методическая часть уроков ---------- */
 
   function firstWord(cmd) {
@@ -879,7 +902,16 @@
   function testLabs(r) {
     r.section('labs: сценарии действительно ломают мир');
     var labs = NET.labs.list();
-    r.ok(labs.length >= 15, 'зарегистрировано не меньше 15 лабораторий', String(labs.length));
+    r.ok(labs.length >= 20, 'зарегистрировано не меньше 20 лабораторий', String(labs.length));
+    /* каждый раздел курса наполнен */
+    NET.labs.tracks.forEach(function (t) {
+      r.ok(NET.labs.byTrack(t.id).length >= 5, 'раздел «' + t.title + '»: не меньше 5 лабораторий',
+        String(NET.labs.byTrack(t.id).length));
+    });
+    var secLevels = {};
+    NET.labs.byTrack('security').forEach(function (lab) { secLevels[lab.difficulty] = true; });
+    r.ok([1, 2, 3, 4, 5].every(function (d) { return secLevels[d]; }),
+      'в разделе «Безопасность» есть задача каждого уровня ★1–★5', Object.keys(secLevels).join(','));
     var levels = {};
     labs.forEach(function (lab) { levels[lab.difficulty] = (levels[lab.difficulty] || 0) + 1; });
     r.ok([1, 2, 3, 4, 5].every(function (d) { return levels[d] >= 2; }),

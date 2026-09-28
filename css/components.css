@@ -89,6 +89,21 @@ select.sel {
 .row .sub { color: var(--fg-faint); font-size: 11px; }
 .row .stars { color: var(--warn); font-size: 10.5px; letter-spacing: -1px; }
 .row .done { color: var(--ok); }
+.list-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 8px 3px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  border-top: 1px solid var(--border);
+}
+.list-group:first-child { border-top: none; padding-top: 2px; }
+.list-group .t { flex: 1 1 auto; }
+.list-group .count { font-variant-numeric: tabular-nums; }
+
 .row.static { cursor: default; }
 .row.static:hover { background: transparent; }
 
@@ -169,6 +184,7 @@ ul.compact li { margin-bottom: 4px; line-height: 1.45; font-size: 12px; }
 .topo-node.role-router rect { fill: #17222e; stroke: #3a5a78; }
 .topo-node.role-switch rect { fill: #151f18; stroke: #35563f; }
 .topo-node.role-cloud rect { fill: #1b1726; stroke: #4a3a68; }
+.topo-node.role-attacker rect { fill: #2a1618; stroke: #8a3a3f; stroke-dasharray: 4 2; }
 .topo-node.current rect { stroke: var(--accent); stroke-width: 2; }
 .topo-node.probe-ok rect { stroke: var(--ok); stroke-width: 1.8; }
 .topo-node.probe-bad rect { stroke: var(--err); stroke-width: 1.8; }

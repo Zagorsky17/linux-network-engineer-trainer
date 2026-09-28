@@ -1,8 +1,12 @@
 /*
  * Заготовка новой лабораторной: два файла и регистрация в index.html и tools/files.json.
  *
- *   node tools/new-lab.js lab16 "Название задачи" 3     — создать и зарегистрировать
+ *   node tools/new-lab.js lab16 "Название задачи" 3     — диагностика
+ *   node tools/new-lab.js sec06 "Название задачи" 3     — раздел «Безопасность»
  *   node tools/new-lab.js --register js/learn/content/lab16.js  — только зарегистрировать файл
+ *
+ * Префикс id задаёт раздел: labNN — диагностика, secNN — безопасность
+ * (в шаблон добавляется track: 'security').
  *
  * Создаются:
  *   js/labs/<id>.js           — сценарий: поломка, проверки, подсказки, разбор, мутации, эталон solution;
@@ -20,10 +24,10 @@ function die(msg) { console.error('new-lab: ' + msg); process.exit(1); }
 /* Куда вставлять: лаборатории — после последней labNN.js, теория — после последнего
    файла learn/content/ (или после learn/debrief.js, если их ещё нет). */
 function anchorFor(rel, list) {
-  const isLab = /^labs\/lab\d+\.js$/.test(rel);
+  const isLab = /^labs\/(lab|sec)\d+\.js$/.test(rel);
   const isContent = /^learn\/content\//.test(rel);
-  if (!isLab && !isContent) die('неизвестный тип файла: ' + rel + ' (ожидается labs/labNN.js или learn/content/*.js)');
-  const same = list.filter(f => isLab ? /^labs\/lab\d+\.js$/.test(f) : /^learn\/content\//.test(f));
+  if (!isLab && !isContent) die('неизвестный тип файла: ' + rel + ' (ожидается labs/labNN.js, labs/secNN.js или learn/content/*.js)');
+  const same = list.filter(f => isLab ? /^labs\/(lab|sec)\d+\.js$/.test(f) : /^learn\/content\//.test(f));
   if (same.length) return same[same.length - 1];
   return isLab ? 'labs/engine.js' : 'learn/debrief.js';
 }
@@ -54,17 +58,24 @@ function register(rel) {
 }
 
 function labTemplate(id, title, difficulty) {
-  const num = id.replace(/^lab/, '');
-  return `/* Lab ${num} — TODO: одна строка о сути поломки. */
+  const sec = id.startsWith('sec');
+  const num = id.replace(/^(lab|sec)/, '');
+  const head = sec
+    ? `/*
+ * Sec ${num} — TODO: одна строка о сути атаки.
+ * Задача оборонительная: обнаружить, отразить, закрыть возможность повторить.
+ */`
+    : `/* Lab ${num} — TODO: одна строка о сути поломки. */`;
+  return `${head}
 (function (NET) {
   'use strict';
   var C = NET.checks;
 
   NET.labs.register({
-    id: '${id}',
+    id: '${id}',${sec ? "\n    track: 'security',   // раздел курса; без поля — диагностика" : ''}
     title: ${JSON.stringify(title)},
     difficulty: ${difficulty},
-    skills: ['troubleshooting', 'networking'],   // id из js/learn/skills.js
+    skills: [${sec ? "'security', 'troubleshooting'" : "'troubleshooting', 'networking'"}],   // id из js/learn/skills.js
     topology: 'campus',
     brief: 'TODO: жалоба пользователя — симптомы, а не причина.\\n' +
       'Что известно, какие хосты доступны (connect gw / app1).',
@@ -77,6 +88,15 @@ function labTemplate(id, title, difficulty) {
      *   h.sysctl('gw', 'net.ipv4.ip_forward', 0, '99-x.conf')        — параметр ядра (+ файл в /etc/sysctl.d)
      *   h.log(host, unit, msg)                                        — запись в журнал для правдоподобия
      *   world.get(host).services.stop('nginx'), .fw.addRule(...), .net.setLink(...)
+     *
+     * Для раздела «Безопасность» (всё моделируется внутри приложения):
+     *   h.fail2ban('srv1', { enabled: false, start: false })          — установить fail2ban
+     *   h.bruteForce('srv1', '198.51.100.66', 30, { user: 'root' })   — следы подбора в журнале sshd
+     *   h.flood('srv1', { kind: 'syn'|'conn', port: 443, sources: [] }) — сервис под потоком
+     *   h.accessLog('srv1', [{ ip, path, status, size, ua }])         — строки /var/log/nginx/access.log
+     *   h.service('srv1', { name, ports, configFile, bindFrom })      — служба с адресом из конфигурации
+     *   h.addUser('srv1', { name: 'support', uid: 0, group: 'root' }) — посторонняя учётная запись
+     * Внешний источник трафика — хост attacker (198.51.100.0/24), адрес .200 у администратора.
      */
     setup: function (world, h) {
       // TODO
@@ -92,6 +112,11 @@ function labTemplate(id, title, difficulty) {
       // C.canPing('srv1', '8.8.8.8', 'Интернет'),
       // C.tcpOpen('app1', '192.168.10.20', 443, 'HTTPS с клиента'),
       // C.survivesReboot('srv1', [ ... ])
+      //
+      // Раздел «Безопасность»: C.tcpClosed (в т.ч. с { srcIP }), C.ipBanned, C.serviceEnabled,
+      // C.sshdOption, C.sysctlIs, C.ufwActive, C.portClosed, C.noExtraRootUsers, C.userAbsent,
+      // C.noExtraSuid, C.fileAbsent, C.fileHas, C.modeAtMost, C.httpStatus.
+      // Обязательно проверяйте и то, что легитимный доступ сохранён.
     ],
 
     /* Эталонное решение: команды оболочки с диагностикой. Прогоняется
@@ -216,11 +241,11 @@ if (args[0] === '--register') {
 
 const [id, title, diffRaw] = args;
 if (!id || !title) {
-  console.log('Использование:\n  node tools/new-lab.js <labNN> "<название>" <сложность 1-5>\n' +
+  console.log('Использование:\n  node tools/new-lab.js <labNN|secNN> "<название>" <сложность 1-5>\n' +
     '  node tools/new-lab.js --register <js/путь/к/файлу.js>');
   process.exit(1);
 }
-if (!/^lab\d{2,}$/.test(id)) die('id должен иметь вид lab16');
+if (!/^(lab|sec)\d{2,}$/.test(id)) die('id должен иметь вид lab16 (диагностика) или sec06 (безопасность)');
 const difficulty = parseInt(diffRaw || '1', 10);
 if (!(difficulty >= 1 && difficulty <= 5)) die('сложность — целое от 1 до 5');
 

@@ -8,8 +8,8 @@
 Запуск из корня проекта:
 
 ```sh
-node tools/run-selftest.js .          # ~640 проверок движка и контракта лабораторий (то же, что команда selftest)
-node tools/run-shell-tests.js .       # ~250 проверок вывода и exit codes реальных команд
+node tools/run-selftest.js .          # ~800 проверок движка и контракта лабораторий (то же, что команда selftest)
+node tools/run-shell-tests.js .       # ~300 проверок вывода и exit codes реальных команд
 node tools/run-lab-walkthrough.js .   # все лаборатории решаются эталонными командами (поле solution)
 node tools/run-lab-mutations.js .     # все варианты (мутации) лабораторий решаемы
 node tools/run-lesson-practice.js .   # практика и решения из уроков сверяются со стендом
@@ -25,4 +25,6 @@ node tools/run-security-tests.js .    # XSS, инъекции, pollution, изо
 `js/` допишите его и сюда (и, конечно, в `index.html`).
 
 Новая лаборатория: `node tools/new-lab.js lab16 "Название" 3` создаёт заготовки
-сценария и теории и сам регистрирует их в обоих списках. Подробности — в CLAUDE.md.
+сценария и теории и сам регистрирует их в обоих списках. Для раздела
+«Безопасность» — `node tools/new-lab.js sec06 "Название" 3` (шаблон получает
+`track: 'security'`). Подробности — в CLAUDE.md.

@@ -270,6 +270,92 @@ async function run(line, asserts) {
   await run('connect srv1', []);
   await run('ping -c1 8.8.8.8', [{ has: '1 received' }]);
 
+  /* --- инструменты защиты, на которых держится раздел «Безопасность» --- */
+  NET.labs.stop();
+  NET.world.rebuild();
+  NET.world.setCurrent('srv1');
+  const srv = NET.world.get('srv1');
+
+  // ufw: порядок правил, insert, ограничение источника, автозапуск юнита
+  await run('sudo ufw default deny incoming', [{ has: 'deny' }]);
+  await run('sudo ufw allow 22/tcp', [{ has: 'Rule added' }]);
+  await run('sudo ufw allow 443/tcp', []);
+  await run('sudo ufw enable', [{ has: 'active' }]);
+  await run('systemctl is-enabled ufw', [{ has: 'enabled' }]);   // enable добавляет юнит в автозапуск
+  await run('sudo ufw insert 1 deny from 198.51.100.64/29', [{ has: 'Rule added' }]);
+  await run('sudo ufw status numbered', [{ re: /\[ 1\] Anywhere\s+DENY\s+198\.51\.100\.64\/29/ }]);
+  await run('sudo ufw allow from 192.168.10.30 to any port 3306 proto tcp', [{ has: 'Rule added' }]);
+  await run('sudo ufw status', [{ has: '192.168.10.30' }]);
+  await run('sudo ufw delete allow from 192.168.10.30 to any port 3306 proto tcp', [{ has: 'Rule deleted' }]);
+  await run('sudo ufw status', [{ not: '192.168.10.30' }]);
+  await run('sudo ufw disable', []);
+  await run('systemctl is-enabled ufw', [{ has: 'disabled' }]);
+
+  // fail2ban: установлен, но без jail не защищает; после включения — банит и пишет правило
+  NET.fail2ban.install(srv, { enabled: false, start: false });
+  await run('fail2ban-client status', [{ has: 'Is fail2ban running?' }, { exit: 255 }]);
+  await run("printf '[sshd]\\nenabled = true\\nmaxretry = 3\\n' | sudo tee /etc/fail2ban/jail.local", []);
+  for (let i = 0; i < 4; i++) srv.log('sshd', 'Failed password for root from 203.0.113.99 port 4000' + i + ' ssh2');
+  await run('sudo systemctl enable --now fail2ban', []);
+  await run('sudo fail2ban-client status sshd', [{ has: 'Currently banned: 1' }, { has: '203.0.113.99' }]);
+  await run('sudo iptables -L INPUT -n', [{ has: 'f2b-sshd' }, { has: '203.0.113.99' }]);
+  await run('sudo fail2ban-client set sshd unbanip 203.0.113.99', [{ has: '203.0.113.99' }]);
+  await run('sudo iptables -L INPUT -n', [{ not: 'f2b-sshd' }]);
+  await run('sudo fail2ban-client set sshd unbanip 203.0.113.99', [{ has: 'is not banned' }, { exit: 255 }]);
+
+  // аудит прав и учётных записей
+  await run('sudo find / -perm -4000 -type f', [{ has: '/usr/bin/sudo' }, { has: '/usr/bin/passwd' }]);
+  await run('ls -l /usr/bin/sudo', [{ has: '-rwsr-xr-x' }, { not: 'total' }]);
+  await run('sudo useradd -u 0 -o backdoorcheck', []);
+  await run("awk -F: '$3==0 {print $1}' /etc/passwd", [{ has: 'root' }, { has: 'backdoorcheck' }]);
+  await run('sudo userdel backdoorcheck', [{ exit: 0 }]);
+  await run("awk -F: '$3==0 {print $1}' /etc/passwd", [{ not: 'backdoorcheck' }]);
+  await run('sudo userdel root', [{ has: "cannot remove user 'root'" }]);
+  await run('who', [{ has: 'pts/0' }]);
+  await run('last -n 5', [{ has: 'wtmp begins' }]);
+
+  // адреса прослушивания и состояние сокетов
+  await run('ss -tan state listening', [{ has: 'LISTEN' }]);
+  await run('ss -tan state syn-recv', [{ not: 'ESTAB' }]);
+  await run('ss -tan state bogus', [{ has: 'wrong state name' }, { exit: 1 }]);
+
+  // nginx: правило deny закрывает класс путей, сайт продолжает работать
+  await run('sudo mkdir -p /var/www/html/.git', []);
+  await run('echo config | sudo tee /var/www/html/.git/config', []);
+  await run('curl -s -I http://127.0.0.1/.git/config', [{ has: '200 OK' }]);
+  await run("sudo sed -i 's|index index.html;|index index.html;\\n        location ~ /\\\\. { deny all; }|' /etc/nginx/sites-available/default", []);
+  await run('sudo nginx -t', [{ has: 'syntax is ok' }]);
+  await run('curl -s -I http://127.0.0.1/.git/config', [{ has: '403 Forbidden' }]);
+  await run('curl -s -I http://127.0.0.1/', [{ has: '200 OK' }]);
+  await run('curl -s -I "http://127.0.0.1/../../etc/passwd"', [{ has: '400 Bad Request' }]);
+  await run('sudo grep -c " 403 " /var/log/nginx/access.log', [{ re: /[1-9]/ }]);   // запросы попадают в журнал
+
+  // sysctl: защита ядра и её постоянство
+  await run('sudo sysctl -w net.ipv4.tcp_syncookies=0', [{ has: '= 0' }]);
+  await run("printf 'net.ipv4.tcp_syncookies = 1\\n' | sudo tee /etc/sysctl.d/80-sec.conf", []);
+  await run('sudo sysctl --system', [{ has: 'net.ipv4.tcp_syncookies = 1' }]);
+  await run('sysctl net.ipv4.tcp_syncookies', [{ has: '= 1' }]);
+
+  // grep -o: разбор журнала по источникам
+  await run('sudo grep -o "^[0-9.]*" /var/log/nginx/access.log | sort | uniq -c | sort -rn | head -3',
+    [{ re: /\d+\s+\d+\.\d+\.\d+\.\d+/ }]);
+
+  // secaudit: находит открытый вход, посторонний порт, uid 0 и SUID-файл
+  NET.labs.start('sec05', { variant: 0 });
+  NET.world.setCurrent('srv1');
+  await run('secaudit', [{ has: 'требуется root' }, { exit: 1 }]);
+  await run('sudo secaudit', [{ has: 'PermitRootLogin yes' }, { has: '4444/tcp' },
+    { has: 'uid 0' }, { has: 'SUID' }, { exit: 2 }]);
+  await run('sudo userdel support', []);
+  await run('sudo systemctl disable --now sysupdate', []);
+  await run('sudo rm /usr/local/bin/.sysd', []);
+  await run('sudo rm /etc/cron.d/apache2-update', []);
+  await run('sudo ufw delete allow 4444/tcp', []);
+  await run("sudo sed -i 's/^PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config", []);
+  await run('sudo systemctl restart ssh', []);
+  await run('sudo secaudit -q', [{ not: 'uid 0' }, { not: '4444/tcp' }, { not: 'SUID' }]);
+  NET.labs.stop();
+
   console.log('\n===== shell smoke: ' + passes + ' PASS, ' + fails + ' FAIL =====');
   process.exit(fails ? 1 : 0);
 })();
