@@ -546,3 +546,36 @@ ul.compact li { margin-bottom: 4px; line-height: 1.45; font-size: 12px; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ---------- каталог тестов (вкладка «Тесты») ---------- */
+
+.test-group { padding-bottom: 4px; }
+.test-group .lesson-h { margin: 22px 28px 10px; }
+.test-group .lesson-p { margin: 0 28px 12px; }
+.test-group .lesson-list { padding-top: 10px; }
+.test-group .list { padding: 4px 28px 8px; }
+.test-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.test-card:hover { background: var(--bg-hover); border-color: #2e4256; }
+.test-card.done { border-color: #2a6b4d; }
+.test-card-cmds { display: flex; flex-wrap: wrap; gap: 4px; }
+.test-card-cmds code {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-deep, #0d141c);
+  color: #9ec7f5;
+  border: 1px solid var(--border);
+}
+#tab-tests .lesson-meta { padding: 0 28px; }

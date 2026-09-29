@@ -5,7 +5,7 @@ const ROOT = process.argv[2];
 
 const engineFiles = JSON.parse(fs.readFileSync(path.join(__dirname, 'files.json'), 'utf8'));
 const uiFiles = ['ui/dom.js', 'ui/notify.js', 'ui/pager.js', 'ui/terminal.js', 'ui/panel_task.js', 'ui/panel_labs.js',
-  'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js', 'ui/panel_quiz.js', 'ui/panel_history.js',
+  'ui/panel_progress.js', 'ui/panel_debrief.js', 'ui/panel_topology.js', 'ui/panel_lesson.js', 'ui/panel_quiz.js', 'ui/panel_tests.js', 'ui/panel_history.js',
   'ui/palette.js', 'ui/shortcuts.js', 'ui/app.js'];
 
 parseHtml(fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'));
@@ -249,13 +249,47 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   NET.ui.lesson.renderIndex();
   ok(text('tab-lesson').indexOf('тест ' + expected + '%') >= 0, 'результат теста виден в списке уроков');
 
-  await NET.ui.terminal.run('quiz list');
-  ok(text('term-out').indexOf('лучший ' + expected + '%') >= 0, 'quiz list показывает результаты');
+  await NET.ui.terminal.run('quiz labs');
+  ok(text('term-out').indexOf('лучший ' + expected + '%') >= 0, 'quiz labs показывает результаты');
   await NET.ui.terminal.run('quiz lab05');
   ok($('tab-lesson').querySelectorAll('.quiz-q').length === NET.quiz.get('lab05').questions.length,
     'команда quiz открывает тест во вкладке');
   await NET.ui.terminal.run('quiz нет-такого');
   ok(text('term-out').indexOf('нет теста') >= 0, 'неизвестный тест даёт понятную ошибку');
+  NET.ui.app.switchCenterTab('terminal');
+
+  /* раздел «Тесты»: каталог тем по командам */
+  NET.ui.app.switchCenterTab('tests');
+  const topicIds = NET.quiz.topicIds();
+  ok($('tab-tests').querySelectorAll('.test-card').length === topicIds.length,
+    'каталог показывает все ' + topicIds.length + ' тем', String($('tab-tests').querySelectorAll('.test-card').length));
+  ok($('tab-tests').querySelectorAll('.test-group').length === NET.quiz.catalog().length + 1,
+    'темы разложены по разделам, плюс блок тестов к лабораторным');
+  await NET.ui.terminal.run('quiz list');
+  ok(text('term-out').indexOf(NET.quiz.get(topicIds[0]).title) >= 0, 'quiz list печатает каталог тем');
+
+  NET.ui.app.switchCenterTab('tests');
+  NET.ui.tests.renderIndex();
+  $('tab-tests').querySelectorAll('.test-card')[0].dispatch('click');
+  const topic = NET.quiz.get(topicIds[0]);
+  const topicCards = $('tab-tests').querySelectorAll('.quiz-q');
+  ok(topicCards.length === topic.questions.length, 'тема открывается во вкладке «Тесты»', String(topicCards.length));
+  topicCards.forEach(card => {
+    const qi = topicCards.indexOf(card);
+    const answer = topic.questions[qi].answer;
+    card.querySelectorAll('.quiz-opt').find(b => Number(b.getAttribute('data-orig')) === answer).dispatch('click');
+  });
+  ok(NET.progress.quizResult(topicIds[0]) && NET.progress.quizResult(topicIds[0]).best === 100,
+    'результат темы сохраняется в прогрессе');
+  ok($('tab-tests').querySelectorAll('.quiz-result')[0].textContent.indexOf('Зачёт') >= 0,
+    'при всех верных ответах тема зачтена');
+  NET.ui.tests.renderIndex();
+  ok($('tab-tests').querySelectorAll('.test-card').filter(c => c.classList.contains('done')).length >= 1,
+    'сданная тема помечена в каталоге');
+  ok(text('tab-tests').indexOf('зачётов: 1') >= 0, 'сводка каталога учитывает зачёт');
+  await NET.ui.terminal.run('quiz ' + topicIds[1]);
+  ok($('tab-tests').querySelectorAll('.quiz-q').length === NET.quiz.get(topicIds[1]).questions.length,
+    'команда quiz открывает тему в разделе «Тесты»');
   NET.ui.app.switchCenterTab('terminal');
 
   ok(errors.length === 0, 'нет ошибок в console.error', errors.slice(0, 3).join(' | '));

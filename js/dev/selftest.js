@@ -794,7 +794,7 @@
     var bad = [];
     NET.quiz.ids().forEach(function (id) {
       var qz = NET.quiz.get(id);
-      if (!NET.lessons.get(id)) bad.push(id + ': нет урока');
+      if (qz.kind === 'lesson' && !NET.lessons.get(id)) bad.push(id + ': нет ни урока, ни описания темы');
       if (qz.questions.length < 8) bad.push(id + ': меньше 8 вопросов');
       var seen = {};
       qz.questions.forEach(function (q, i) {
@@ -811,6 +811,45 @@
       });
     });
     r.ok(bad.length === 0, 'вопросы тестов корректны', bad.slice(0, 4).join('; '));
+
+    /* Каталог тем: раздел «Тесты» собирается из данных, поэтому тема без
+       описания или с чужой группой просто исчезла бы из интерфейса. */
+    var groupIds = {};
+    NET.quiz.groups().forEach(function (g) { groupIds[g.id] = true; });
+    var inCatalog = {};
+    NET.quiz.catalog().forEach(function (g) {
+      g.topics.forEach(function (t) { inCatalog[t.id] = true; });
+    });
+    var seenTitle = {};
+    var badTopics = [];
+    NET.quiz.topicIds().forEach(function (id) {
+      var t = NET.quiz.get(id);
+      if (!t.title || !t.desc) badTopics.push(id + ': нет названия или описания темы');
+      if (!groupIds[t.group]) badTopics.push(id + ': раздел «' + t.group + '» не объявлен');
+      if (!inCatalog[id]) badTopics.push(id + ': тема не попала в каталог');
+      if (seenTitle[t.title]) badTopics.push(id + ': повтор названия темы');
+      seenTitle[t.title] = true;
+      if (!NET.quiz.commandsOf(id).length) badTopics.push(id + ': вопросы не привязаны к командам');
+    });
+    r.ok(NET.quiz.topicIds().length >= 12, 'каталог покрывает не меньше 12 тем',
+      String(NET.quiz.topicIds().length));
+    r.ok(NET.quiz.catalog().length >= 3, 'разделов каталога не меньше трёх',
+      String(NET.quiz.catalog().length));
+    r.ok(badTopics.length === 0, 'темы каталога описаны и разложены по разделам',
+      badTopics.slice(0, 4).join('; '));
+    r.ok(NET.quiz.lessonIds().length === NET.lessons.ids().length,
+      'тесты к урокам не смешаны с темами каталога');
+
+    /* Охват: основные группы команд тренажёра должны где-то спрашиваться. */
+    var asked = {};
+    NET.quiz.topicIds().forEach(function (id) {
+      NET.quiz.commandsOf(id).forEach(function (c) { asked[c] = true; });
+    });
+    var mustAsk = ['ls', 'grep', 'sed', 'awk', 'chmod', 'ps', 'systemctl', 'journalctl', 'apt',
+      'sysctl', 'ip', 'netplan', 'ping', 'traceroute', 'ss', 'curl', 'dig', 'tcpdump',
+      'ufw', 'iptables', 'sshd', 'find'];
+    var notAsked = mustAsk.filter(function (c) { return !asked[c]; });
+    r.ok(notAsked.length === 0, 'основные команды охвачены тестами', notAsked.join(', '));
 
     var qz = NET.quiz.get('lab01');
     var all = qz.questions.map(function (q) { return q.answer; });

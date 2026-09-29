@@ -1,11 +1,15 @@
 /*
- * panel_quiz.js — прохождение теста по командам урока.
+ * panel_quiz.js — прохождение теста по командам.
  *
- * Тест открывается во вкладке «Теория» на месте урока. Все вопросы на одной
- * странице: вариант выбирается один раз, сразу показывается верный ответ
- * и объяснение — тест работает как тренажёр, а не только как контроль.
- * Варианты перемешиваются при каждом прохождении, чтобы запоминался смысл,
- * а не позиция ответа. Лучший результат сохраняется в прогрессе.
+ * Одна и та же страница обслуживает два места: тест к уроку открывается
+ * во вкладке «Теория» на месте урока, тест по теме — во вкладке «Тесты»
+ * на месте каталога. Различие — только контейнер и кнопки возврата,
+ * поэтому они вынесены в hosts.
+ * Все вопросы на одной странице: вариант выбирается один раз, сразу
+ * показывается верный ответ и объяснение — тест работает как тренажёр,
+ * а не только как контроль. Варианты перемешиваются при каждом прохождении,
+ * чтобы запоминался смысл, а не позиция ответа. Лучший результат
+ * сохраняется в прогрессе.
  */
 (function (NET) {
   'use strict';
@@ -15,6 +19,31 @@
   var h = D.h;
 
   var state = null;
+
+  /* Где живёт тест: контейнер, подпись и возврат к списку. */
+  var hosts = {
+    lesson: {
+      root: function () { return NET.ui.lesson.root(); },
+      backLabel: '← К уроку',
+      back: function (id) { NET.ui.lesson.open(id); },
+      indexLabel: 'Все уроки',
+      index: function () { NET.ui.lesson.renderIndex(); },
+      tab: 'lesson'
+    },
+    tests: {
+      root: function () { return NET.ui.tests.root(); },
+      backLabel: '← Все тесты',
+      back: function () { NET.ui.tests.renderIndex(); },
+      indexLabel: 'Теория',
+      index: function () { NET.ui.app.switchCenterTab('lesson'); NET.ui.lesson.renderIndex(); },
+      tab: 'tests'
+    }
+  };
+
+  function hostFor(id, name) {
+    if (name && hosts[name]) return hosts[name];
+    return NET.quiz.isTopic(id) && NET.ui.tests ? hosts.tests : hosts.lesson;
+  }
 
   function shuffled(n) {
     var a = [];
@@ -76,10 +105,12 @@
         res.wrong.map(function (i) { return i + 1; }).join(', ') +
         ' и раздел урока «Команды: что показывают и как читать результат».'));
     }
+    var host = state.host;
+    var id = state.quiz.id;
     var actions = h('div', 'lesson-nav inline');
-    actions.appendChild(D.button('Пройти ещё раз', null, 'primary', function () { open(state.quiz.id); }));
-    actions.appendChild(D.button('← К уроку', null, '', function () { NET.ui.lesson.open(state.quiz.id); }));
-    var lesson = NET.lessons.get(state.quiz.id);
+    actions.appendChild(D.button('Пройти ещё раз', null, 'primary', function () { open(id, { host: host.tab }); }));
+    actions.appendChild(D.button(host.backLabel, null, '', function () { host.back(id); }));
+    var lesson = NET.lessons.get(id);
     if (lesson && lesson.lab) {
       actions.appendChild(D.button('Начать ' + lesson.lab.toUpperCase(), null, '', function () {
         NET.ui.labs.start(lesson.lab);
@@ -89,23 +120,25 @@
     box.appendChild(actions);
   }
 
-  function open(id) {
+  function open(id, opts) {
     var quiz = NET.quiz.get(id);
-    var box = NET.ui.lesson.root();
+    var host = hostFor(id, opts && opts.host);
+    var box = host.root();
     if (!quiz || !box) return null;
 
-    state = { quiz: quiz, answers: quiz.questions.map(function () { return null; }) };
+    state = { quiz: quiz, host: host, answers: quiz.questions.map(function () { return null; }) };
     box.textContent = '';
     box.scrollTop = 0;
 
     var nav = h('div', 'lesson-nav');
-    nav.appendChild(D.button('← К уроку', null, 'small ghost', function () { NET.ui.lesson.open(id); }));
-    nav.appendChild(D.button('Все уроки', null, 'small ghost', function () { NET.ui.lesson.renderIndex(); }));
+    nav.appendChild(D.button(host.backLabel, null, 'small ghost', function () { host.back(id); }));
+    nav.appendChild(D.button(host.indexLabel, null, 'small ghost', function () { host.index(); }));
     box.appendChild(nav);
 
     var article = h('article', 'lesson quiz');
     article.appendChild(h('h2', 'lesson-title', 'Тест по командам'));
     article.appendChild(h('p', 'lesson-lead', quiz.title));
+    if (quiz.desc) article.appendChild(h('p', 'lesson-p dim', quiz.desc));
     var meta = h('div', 'lesson-meta');
     meta.appendChild(D.chip(quiz.questions.length + ' вопросов'));
     meta.appendChild(D.chip('зачёт от ' + quiz.passPercent + '%'));
@@ -149,13 +182,18 @@
 
   /* Открыть тест вместе с переключением вкладки — для команды quiz и кнопок. */
   function show(id) {
-    NET.ui.app.switchCenterTab('lesson');
-    return open(id);
+    var host = hostFor(id);
+    NET.ui.app.switchCenterTab(host.tab);
+    return open(id, { host: host.tab });
   }
+
+  /* Где откроется тест: подсказка для команды quiz. */
+  function tabOf(id) { return hostFor(id).tab; }
 
   NET.ui.quiz = {
     open: open,
     show: show,
+    tabOf: tabOf,
     state: function () { return state; },
     close: function () { state = null; }
   };
