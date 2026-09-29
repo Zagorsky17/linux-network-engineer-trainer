@@ -245,27 +245,46 @@
 
   reg({
     name: 'quiz', aliases: ['test-commands'], category: 'trainer',
-    summary: 'тест по командам урока',
-    usage: 'quiz [list | lab01 | linux-basics]',
+    summary: 'тесты по командам: темы каталога и тесты к урокам',
+    usage: 'quiz [list | labs | random | t-files | lab01]',
     complete: function () {
-      return ['list'].concat(NET.quiz ? NET.quiz.ids() : []);
+      return ['list', 'labs', 'random'].concat(NET.quiz ? NET.quiz.ids() : []);
     },
     run: function (ctx) {
       if (!NET.quiz) return ctx.fail('quiz: тесты не загружены');
       var arg = ctx.argv[0];
 
+      function row(id) {
+        var qz = NET.quiz.get(id);
+        var res = NET.progress.quizResult(id);
+        ctx.line('  ' + U.padRight(id, 14) + U.padRight(qz.questions.length + ' вопр.', 10) +
+          U.padRight(res ? 'лучший ' + res.best + '%' : '—', 13) + qz.title);
+      }
+
       if (!arg || arg === 'list') {
         ctx.line('Тесты по командам. Открыть тест: quiz <id>');
-        ctx.line('');
-        NET.quiz.ids().forEach(function (id) {
-          var qz = NET.quiz.get(id);
-          var res = NET.progress.quizResult(id);
-          ctx.line('  ' + U.padRight(id, 14) + U.padRight(qz.questions.length + ' вопр.', 10) +
-            U.padRight(res ? 'лучший ' + res.best + '%' : '—', 13) + qz.title);
+        NET.quiz.catalog().forEach(function (group) {
+          ctx.line('');
+          ctx.line('## ' + group.title);
+          group.topics.forEach(function (qz) { row(qz.id); });
         });
         ctx.line('');
-        ctx.line('Зачёт — от ' + NET.quiz.PASS_PERCENT + '% верных ответов.');
+        ctx.line('Тесты к урокам лабораторных: quiz labs');
+        ctx.line('Случайная тема: quiz random. Зачёт — от ' + NET.quiz.PASS_PERCENT + '% верных ответов.');
         return 0;
+      }
+
+      if (arg === 'labs') {
+        ctx.line('Тесты к урокам лабораторных. Открыть: quiz <id>');
+        ctx.line('');
+        NET.quiz.lessonIds().forEach(row);
+        return 0;
+      }
+
+      if (arg === 'random') {
+        var pool = NET.quiz.topicIds();
+        if (!pool.length) return ctx.fail('quiz: нет тем');
+        arg = pool[Math.floor(Math.random() * pool.length)];
       }
 
       var lesson = NET.lessons.get(arg) || NET.lessons.forLab(arg);
@@ -274,7 +293,8 @@
 
       if (NET.ui && NET.ui.quiz && ctx.streaming) {
         var qz = NET.ui.quiz.show(id);
-        ctx.line('Тест «' + qz.title + '» открыт во вкладке «Теория» (Alt+3): ' +
+        var where = NET.ui.quiz.tabOf(id) === 'tests' ? '«Тесты» (Alt+T)' : '«Теория» (Alt+3)';
+        ctx.line('Тест «' + qz.title + '» открыт во вкладке ' + where + ': ' +
           qz.questions.length + ' вопросов, зачёт от ' + qz.passPercent + '%.');
         return 0;
       }

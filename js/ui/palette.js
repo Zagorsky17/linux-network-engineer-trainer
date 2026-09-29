@@ -25,6 +25,17 @@
         run: function () { NET.ui.labs.selectMode(m.id); }
       });
     });
+    if (NET.quiz && NET.quiz.catalog) {
+      NET.quiz.catalog().forEach(function (g) {
+        g.topics.forEach(function (qz) {
+          items.push({
+            kind: 'Тест', label: qz.title,
+            hint: g.title + ' · ' + qz.questions.length + ' вопросов',
+            run: function () { NET.ui.tests.open(qz.id); }
+          });
+        });
+      });
+    }
     NET.world.shells().forEach(function (m) {
       items.push({
         kind: 'Хост', label: 'connect ' + m.name, hint: m.hostname + ' ' + (m.net.primaryIP() || ''),
@@ -39,6 +50,7 @@
     });
     [['check', 'проверить решение'], ['hint', 'подсказка'], ['reset', 'сбросить лабораторию'],
       ['lab list', 'список лабораторий'], ['hosts', 'узлы топологии'], ['help', 'все команды'],
+      ['quiz list', 'каталог тестов по командам'], ['quiz random', 'случайная тема теста'],
       ['selftest', 'самопроверка движка']].forEach(function (p) {
       items.push({
         kind: 'Тренажёр', label: p[0], hint: p[1],

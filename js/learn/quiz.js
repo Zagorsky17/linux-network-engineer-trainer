@@ -1,7 +1,10 @@
 /*
- * quiz.js — тесты по командам, которые используются в лабораторных.
+ * quiz.js — движок тестов по командам.
  *
- * Один тест на урок (вводный и по одному на лабораторную). Вопрос проверяет
+ * Тесты бывают двух видов и различаются только мета-данными:
+ *   · тест к уроку (id совпадает с id урока) — открывается во вкладке «Теория»;
+ *   · тема каталога (id вида t-имя, данные в js/learn/tests/) — раздел «Тесты».
+ * Вопрос проверяет
  * не память на ключи, а понимание: что показывает команда, когда её
  * применять и как читать результат. Каждый вариант ответа сопровождается
  * объяснением, которое показывается после выбора.
@@ -17,8 +20,26 @@
 
   var PASS_PERCENT = 75;
   var quizzes = {};
+  var metas = {};          /* id -> описание теста-темы (у тестов к урокам его нет) */
+  var groups = {};         /* id -> раздел каталога */
+  var groupOrder = [];
 
-  function quiz(id, questions) { quizzes[id] = questions; }
+  /*
+   * Тест регистрируется одинаково и для урока, и для отдельной темы.
+   * meta нужна только темам: у теста к уроку название и описание берутся
+   * из самого урока, поэтому дублировать их здесь нечем и незачем.
+   * meta: { title, desc, group, order }.
+   */
+  function quiz(id, questions, meta) {
+    quizzes[id] = questions;
+    if (meta) metas[id] = meta;
+  }
+
+  /* Раздел каталога тестов: «Основы Linux», «Сеть», … Порядок — как объявлен. */
+  function group(def) {
+    if (!groups[def.id]) groupOrder.push(def.id);
+    groups[def.id] = { id: def.id, title: def.title, desc: def.desc || '' };
+  }
 
   /* ================= Вводный урок ================= */
 
@@ -520,8 +541,53 @@
   function get(id) {
     var qs = quizzes[id];
     if (!qs) return null;
-    var lesson = NET.lessons && NET.lessons.get(id);
-    return { id: id, title: lesson ? lesson.title : id, questions: qs, passPercent: PASS_PERCENT };
+    var meta = metas[id];
+    var lesson = !meta && NET.lessons && NET.lessons.get(id);
+    return {
+      id: id,
+      kind: meta ? 'topic' : 'lesson',
+      title: meta ? meta.title : (lesson ? lesson.title : id),
+      desc: meta ? meta.desc : (lesson ? lesson.lead : ''),
+      group: meta ? meta.group : '',
+      questions: qs,
+      passPercent: PASS_PERCENT
+    };
+  }
+
+  /* Команды, о которых спрашивает тест: показываются в карточке каталога. */
+  function commandsOf(id) {
+    var qs = quizzes[id] || [];
+    var seen = {};
+    var out = [];
+    qs.forEach(function (q) {
+      var w = String(q.cmd).replace(/^sudo\s+/, '').trim().split(/[\s|]/)[0];
+      if (w && !seen[w]) { seen[w] = true; out.push(w); }
+    });
+    return out;
+  }
+
+  /* Каталог тем: разделы в порядке объявления, внутри — тесты в порядке регистрации. */
+  function catalog() {
+    return groupOrder.map(function (gid) {
+      var g = groups[gid];
+      return {
+        id: g.id, title: g.title, desc: g.desc,
+        topics: topicIds().filter(function (id) { return metas[id].group === gid; })
+          .map(function (id) {
+            var qz = get(id);
+            qz.commands = commandsOf(id);
+            return qz;
+          })
+      };
+    }).filter(function (g) { return g.topics.length; });
+  }
+
+  function topicIds() {
+    return Object.keys(quizzes).filter(function (id) { return !!metas[id]; });
+  }
+
+  function lessonIds() {
+    return Object.keys(quizzes).filter(function (id) { return !metas[id]; });
   }
 
   /* answers[i] — индекс выбранного варианта в ИСХОДНОМ порядке (или null). */
@@ -546,6 +612,13 @@
     grade: grade,
     ids: function () { return Object.keys(quizzes); },
     add: quiz,
+    group: group,
+    groups: function () { return groupOrder.map(function (id) { return groups[id]; }); },
+    catalog: catalog,
+    topicIds: topicIds,
+    lessonIds: lessonIds,
+    commandsOf: commandsOf,
+    isTopic: function (id) { return !!metas[id]; },
     has: function (id) { return !!quizzes[id]; },
     PASS_PERCENT: PASS_PERCENT
   };

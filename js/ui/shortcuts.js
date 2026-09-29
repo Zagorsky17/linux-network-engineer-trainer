@@ -15,6 +15,7 @@
     ['F5', 'сбросить лабораторию'],
     ['Ctrl/⌘ + K', 'командная палитра'],
     ['Alt + 1 / 2 / 3', 'терминал / схема топологии / теория'],
+    ['Alt + T', 'тесты по командам'],
     ['Alt + 4 / 5 / 6', 'задание / разбор / история'],
     ['Alt + Q', 'быстрая задача (Quick Practice)'],
     ['Ctrl + L', 'очистить терминал'],
@@ -113,6 +114,11 @@
           var t = map[e.key];
           if (t[0] === 'center') NET.ui.app.switchCenterTab(t[1]);
           else NET.ui.app.switchRightTab(t[1]);
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 't' || e.key === 'T') {
+          NET.ui.app.switchCenterTab('tests');
           e.preventDefault();
           return;
         }
