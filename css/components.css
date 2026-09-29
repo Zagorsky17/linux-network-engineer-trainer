@@ -104,6 +104,28 @@ select.sel {
 .list-group .t { flex: 1 1 auto; }
 .list-group .count { font-variant-numeric: tabular-nums; }
 
+.row .caret { color: var(--fg-faint); font-size: 10px; }
+.row.selected { background: var(--bg-hover); border-color: var(--accent-dim); }
+
+/* карточка лаборатории: описание и кнопка запуска под выбранной строкой */
+.lab-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 6px;
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.lab-detail-brief { font-size: 12px; line-height: 1.55; color: var(--fg-dim); }
+.lab-detail-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+  font-size: 11px; color: var(--fg-faint);
+}
+.lab-detail-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lab-detail-note { font-size: 11px; color: var(--fg-faint); }
+
 .row.static { cursor: default; }
 .row.static:hover { background: transparent; }
 

@@ -81,9 +81,20 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
   ok(inp.value.length > 0, 'ArrowUp подставляет команду из истории', inp.value);
   inp.value = '';
 
-  /* запуск лаборатории кликом по строке */
-  $('labs-list').childNodes.filter(n => n.className && n.className.indexOf('row') >= 0)[0].dispatch('click');
-  ok(!!NET.labs.current(), 'клик по лаборатории запускает её');
+  /* строка лаборатории только раскрывает карточку, запуск — отдельной кнопкой */
+  const labRow = () => $('labs-list').childNodes.filter(n => n.className && n.className.indexOf('row') >= 0)[0];
+  labRow().dispatch('click');
+  ok(!NET.labs.current(), 'клик по строке не запускает лабораторию');
+  const detail = $('labs-list').childNodes.find(n => n.className === 'lab-detail');
+  ok(!!detail && detail.textContent.indexOf('Запустить') >= 0, 'под строкой раскрылась карточка с кнопкой запуска');
+  labRow().dispatch('click');
+  ok(!$('labs-list').childNodes.find(n => n.className === 'lab-detail'), 'повторный клик сворачивает карточку');
+  labRow().dispatch('click');
+  $('labs-list').childNodes.find(n => n.className === 'lab-detail')
+    .querySelectorAll('.btn')[0].dispatch('click');
+  ok(!!NET.labs.current(), 'кнопка «Запустить» запускает лабораторию');
+  ok(!$('labs-list').childNodes.find(n => n.className === 'lab-detail'),
+    'после запуска карточка сворачивается');
   ok(text('tab-task').indexOf('LAB01') >= 0, 'панель задания показывает лабораторию');
   ok(text('lab-chip').indexOf('LAB01') >= 0, 'чип лаборатории в топбаре');
   ok(text('tab-task').indexOf('Шаги диагностики') >= 0, 'показаны шаги диагностики');

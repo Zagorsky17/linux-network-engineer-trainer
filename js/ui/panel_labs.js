@@ -8,7 +8,12 @@
   var U = NET.util;
   NET.ui = NET.ui || {};
 
-  var h = NET.ui.dom.h;
+  var D = NET.ui.dom;
+  var h = D.h;
+
+  /* Строка списка только раскрывает карточку: запуск — отдельной кнопкой,
+     чтобы случайный клик не сбрасывал текущую работу и состояние мира. */
+  var selectedId = null;
 
   /* ---------- контроллер ---------- */
 
@@ -18,6 +23,7 @@
       var mode = NET.modes.get();
       var res = NET.labs.start(id, { fresh: true, variant: opts.variant });
       if (res.err) { NET.ui.notify.err('Не удалось запустить', res.err); return; }
+      selectedId = null;
       var cur = NET.labs.current();
       cur.shownHints = [];
       cur.lastCheck = null;
@@ -98,6 +104,44 @@
 
   /* ---------- список лабораторий ---------- */
 
+  /* Раскрыть карточку лаборатории (повторный клик сворачивает её). */
+  function select(id) {
+    selectedId = selectedId === id ? null : id;
+    renderList();
+  }
+
+  /* Карточка под строкой: о чём задача и единственная кнопка запуска. */
+  function detail(lab, cur) {
+    var box = h('div', 'lab-detail');
+    var mode = NET.modes.get();
+    box.appendChild(h('div', 'lab-detail-brief', mode.blindBrief ?
+      'Режим «Troubleshooting»: симптомы не раскрываются до запуска.' : lab.brief));
+
+    var meta = h('div', 'lab-detail-meta');
+    meta.appendChild(h('span', null, 'сложность ' + '★'.repeat(lab.difficulty)));
+    (lab.skills || []).slice(0, 3).forEach(function (id) {
+      var sk = NET.skills.get(id);
+      meta.appendChild(h('span', null, sk ? sk.title : id));
+    });
+    box.appendChild(meta);
+
+    var running = !!(cur && cur.lab.id === lab.id);
+    var actions = h('div', 'lab-detail-actions');
+    actions.appendChild(D.button(running ? 'Запустить заново' : 'Запустить', null, 'small primary',
+      function () { ctl.start(lab.id); }));
+    var lesson = NET.lessons && NET.lessons.forLab(lab.id);
+    if (lesson) {
+      actions.appendChild(D.button('Теория', null, 'small ghost', function () {
+        NET.ui.lesson.show(lesson.id);
+      }));
+    }
+    if (running) {
+      actions.appendChild(h('span', 'lab-detail-note', 'идёт сейчас'));
+    }
+    box.appendChild(actions);
+    return box;
+  }
+
   function renderList() {
     var box = document.getElementById('labs-list');
     if (!box) return;
@@ -120,15 +164,19 @@
       inTrack.forEach(function (lab) {
         var solved = NET.progress.isLabSolved(lab.id);
         if (solved) solvedCount++;
-        var row = h('div', 'row' + (cur && cur.lab.id === lab.id ? ' active' : ''));
-        row.title = lab.title + ' — сложность ' + lab.difficulty;
+        var open = selectedId === lab.id;
+        var row = h('div', 'row' + (cur && cur.lab.id === lab.id ? ' active' : '') +
+          (open ? ' selected' : ''));
+        row.title = lab.title + ' — сложность ' + lab.difficulty + '. Нажмите, чтобы раскрыть описание';
         row.appendChild(h('span', solved ? 'done' : 'faint', solved ? '✔' : '·'));
         var t = h('span', 't');
         t.textContent = lab.id.toUpperCase() + ' ' + lab.title;
         row.appendChild(t);
         row.appendChild(h('span', 'stars', '★'.repeat(lab.difficulty)));
-        row.addEventListener('click', function () { ctl.start(lab.id); });
+        row.appendChild(h('span', 'caret', open ? '▾' : '▸'));
+        row.addEventListener('click', function () { select(lab.id); });
         box.appendChild(row);
+        if (open) box.appendChild(detail(lab, cur));
       });
     });
 
@@ -178,6 +226,8 @@
     reset: ctl.reset,
     startRandom: ctl.startRandom,
     renderList: renderList,
+    select: select,
+    selected: function () { return selectedId; },
     renderModes: renderModes,
     selectMode: selectMode
   };
