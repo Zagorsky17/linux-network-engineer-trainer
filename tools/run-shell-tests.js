@@ -106,8 +106,11 @@ async function run(line, asserts) {
 
   await run('sudo ufw status', [{ has: 'Status: inactive' }]);
   await run('sudo ufw allow 443/tcp', [{ has: 'Rule added' }]);
+  /* профиль приложения: ufw allow OpenSSH = 22/tcp */
+  await run('sudo ufw allow OpenSSH', [{ exit: 0 }]);
+  await run('sudo ufw allow "Nginx HTTP"', [{ has: 'Rule added' }]);
   await run('sudo ufw enable', [{ has: 'Firewall is active' }]);
-  await run('sudo ufw status numbered', [{ has: '443/tcp' }, { has: 'ALLOW' }]);
+  await run('sudo ufw status numbered', [{ has: '443/tcp' }, { has: 'ALLOW' }, { has: '22/tcp' }, { has: '80/tcp' }]);
   await run('sudo iptables -L -n', [{ has: 'Chain INPUT' }, { has: 'DROP' }]);
   await run('sudo ufw disable', [{ has: 'Firewall stopped' }]);
   await run('sudo iptables -A INPUT -p tcp --dport 8080 -j DROP', [{ exit: 0 }]);
@@ -192,6 +195,9 @@ async function run(line, asserts) {
   await run('nc -zv 192.168.10.20 443', [{ has: 'failed' }]);
   await run('connect srv1', []);
   await run('sudo ufw allow 443/tcp', [{ has: 'Rule added' }]);
+  /* профиль приложения: ufw allow OpenSSH = 22/tcp */
+  await run('sudo ufw allow OpenSSH', [{ exit: 0 }]);
+  await run('sudo ufw allow "Nginx HTTP"', [{ has: 'Rule added' }]);
   await run('check', [{ has: 'Задача решена' }]);
   await run('reset', [{ has: 'восстановлено' }]);
   await run('check', [{ has: '[✘]' }]);

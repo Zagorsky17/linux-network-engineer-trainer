@@ -672,7 +672,7 @@
       r.ok(l.minutes > 0 && l.minutes < 60, where + 'указано время чтения');
       r.ok(typeof l.lead === 'string' && l.lead.length > 150, where + 'есть вводный абзац');
       r.ok(l.sections.length >= 3, where + 'не меньше трёх разделов', String(l.sections.length));
-      r.ok((l.summary || []).length >= 3, where + 'есть блок «Коротко»');
+      r.ok((l.summary || []).length >= 3, where + 'есть блок «Что нужно запомнить»');
       r.ok((l.pitfalls || []).length >= 2, where + 'перечислены типичные ошибки');
       r.ok(typeof l.practice === 'string' && l.practice.length > 40, where + 'есть переход к практике');
 
@@ -680,9 +680,15 @@
         var tag = where + 'раздел ' + (i + 1);
         r.ok(typeof sec.h === 'string' && sec.h.length > 5, tag + ': есть заголовок');
         r.ok((sec.p || []).length >= 1, tag + ': есть текст');
-        (sec.p || []).forEach(function (para) {
+        (sec.p || []).concat(sec.after || []).forEach(function (para) {
           if (para.length < 80) badCommands.push(tag + ': слишком короткий абзац');
         });
+        if (sec.scheme) {
+          /* схема рисуется без переноса строк: широкая не влезет в колонку урока */
+          var wide = String(sec.scheme.text || '').split('\n').filter(function (l) { return l.length > 72; });
+          if (!sec.scheme.text) badCommands.push(tag + ': у схемы нет текста');
+          if (wide.length) badCommands.push(tag + ': строка схемы длиннее 72 символов: ' + wide[0]);
+        }
         (sec.cmds || []).forEach(function (pair) {
           var first = String(pair[0]).replace(/^sudo\s+/, '').trim().split(/[\s|]/)[0];
           if (first !== '!!' && !NET.commands.get(first)) {

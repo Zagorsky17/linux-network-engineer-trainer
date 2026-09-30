@@ -329,6 +329,15 @@
       (sec.p || []).forEach(function (para) {
         article.appendChild(h('p', 'lesson-p', para));
       });
+      if (sec.scheme) {
+        var fig = h('figure', 'lesson-scheme');
+        if (sec.scheme.title) fig.appendChild(h('figcaption', null, 'Схема. ' + sec.scheme.title));
+        fig.appendChild(h('pre', null, sec.scheme.text));
+        article.appendChild(fig);
+      }
+      (sec.after || []).forEach(function (para) {
+        article.appendChild(h('p', 'lesson-p', para));
+      });
       if (sec.out) article.appendChild(h('pre', 'lesson-out', sec.out));
       if (sec.cmds) article.appendChild(commandTable(sec.cmds));
       if (sec.note) {
@@ -353,7 +362,7 @@
     }
 
     if (lesson.summary && lesson.summary.length) {
-      article.appendChild(h('h3', 'lesson-h', 'Коротко'));
+      article.appendChild(h('h3', 'lesson-h', 'Что нужно запомнить'));
       var sum = h('ul', 'lesson-list-ul lesson-summary');
       lesson.summary.forEach(function (t) { sum.appendChild(h('li', null, t)); });
       article.appendChild(sum);
