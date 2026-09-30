@@ -229,6 +229,13 @@
         ctx.line('');
         ctx.line('## ' + sec.h);
         (sec.p || []).forEach(function (para) { ctx.line(para); });
+        if (sec.scheme) {
+          ctx.line('');
+          if (sec.scheme.title) ctx.line('  Схема. ' + sec.scheme.title);
+          sec.scheme.text.split('\n').forEach(function (l) { ctx.line('  ' + l); });
+          ctx.line('');
+        }
+        (sec.after || []).forEach(function (para) { ctx.line(para); });
         (sec.cmds || []).forEach(function (pair) {
           ctx.line('    ' + U.padRight(pair[0], 44) + (pair[1] || ''));
         });
@@ -236,7 +243,7 @@
       });
       if (lesson.summary) {
         ctx.line('');
-        ctx.line('## Коротко');
+        ctx.line('## Что нужно запомнить');
         lesson.summary.forEach(function (t) { ctx.line('  · ' + t); });
       }
       return 0;

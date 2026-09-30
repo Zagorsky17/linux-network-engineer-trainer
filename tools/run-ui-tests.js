@@ -207,7 +207,7 @@ const text = id => { const e = $(id); return e ? e.textContent : ''; };
     'в списке все уроки', String($('tab-lesson').querySelectorAll('.lesson-card').length));
   $('tab-lesson').querySelectorAll('.lesson-card')[0].dispatch('click');
   ok(text('tab-lesson').indexOf('Основные команды Linux') >= 0, 'урок открывается по клику');
-  ok(text('tab-lesson').indexOf('Коротко') >= 0, 'в уроке есть блок «Коротко»');
+  ok(text('tab-lesson').indexOf('Что нужно запомнить') >= 0, 'в уроке есть блок «Что нужно запомнить»');
   ok(text('tab-lesson').indexOf('Типичные ошибки') >= 0, 'в уроке есть разбор ошибок');
   NET.progress.markLessonRead('linux-basics');
   ok(NET.progress.isLessonRead('linux-basics'), 'отметка о прочтении сохраняется');

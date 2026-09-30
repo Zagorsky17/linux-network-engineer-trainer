@@ -254,8 +254,11 @@
           sources: spec.sources || ['198.51.100.66', '198.51.100.67', '198.51.100.68']
         });
         if ((spec.kind || 'conn') === 'syn') {
+          /* как настоящее ядро: с включёнными SYN cookies — «Sending cookies»,
+             без них — «Dropping request» (очередь переполнена, клиент отброшен) */
+          var cookies = String((m.net.sysctl || {})['net.ipv4.tcp_syncookies']) !== '0';
           m.log('kernel', 'TCP: request_sock_TCP: Possible SYN flooding on port ' + (spec.port || 80) +
-            '. Sending cookies.', 'warning');
+            (cookies ? '. Sending cookies.' : '. Dropping request.  Check SNMP counters.'), 'warning');
         }
         /* полуоткрытые соединения видны в ss -tan state syn-recv */
         if ((spec.kind || 'conn') === 'syn') {

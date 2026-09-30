@@ -306,6 +306,29 @@ ul.compact li { margin-bottom: 4px; line-height: 1.45; font-size: 12px; }
   white-space: pre-wrap;
   overflow-x: auto;
 }
+/* схема в уроке: псевдографика, поэтому строки не переносятся */
+.lesson-scheme {
+  margin: 4px 0 16px;
+  padding: 10px 12px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid #3b6ea8;
+  border-radius: var(--radius-sm);
+}
+.lesson-scheme figcaption {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-dim);
+}
+.lesson-scheme pre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #cfe6ff;
+  white-space: pre;
+  overflow-x: auto;
+}
 .lesson .cmd-table { margin: 4px 0 14px; }
 .lesson-note {
   margin: 4px 0 16px;

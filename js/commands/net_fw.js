@@ -11,7 +11,9 @@
 
   var SERVICE_PORTS = {
     ssh: 22, http: 80, https: 443, 'http/tcp': 80, dns: 53, domain: 53,
-    smtp: 25, mysql: 3306, postgres: 5432, ntp: 123
+    smtp: 25, mysql: 3306, postgres: 5432, ntp: 123,
+    /* профили приложений ufw (ufw app list) */
+    OpenSSH: 22, 'Nginx HTTP': 80, 'Nginx HTTPS': 443
   };
 
   /* ---------- ufw ---------- */
