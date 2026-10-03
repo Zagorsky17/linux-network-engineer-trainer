@@ -27,10 +27,8 @@
 }
 .brand .logo {
   width: 22px; height: 22px;
-  display: grid; place-items: center;
-  border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent-dim), #1b4a7d);
-  color: #fff; font-size: 12px; font-weight: 700;
+  flex: 0 0 auto;
+  background: url("../img/favicon.svg") center / contain no-repeat;
 }
 .brand small { color: var(--fg-faint); font-weight: 400; }
 

@@ -327,7 +327,7 @@ function noDangerousTags(where) {
 
   /* ============ 7. Автономность ============ */
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  const externals = (html.match(/(?:src|href)="(?!js\/|css\/)[^"]*"/g) || []);
+  const externals = (html.match(/(?:src|href)="(?!js\/|css\/|img\/)[^"]*"/g) || []);
   ok(externals.length === 0, 'автономность: в index.html нет внешних ресурсов', externals.join(','));
   ok(/Content-Security-Policy/.test(html), 'автономность: CSP объявлена в документе');
   ok(/connect-src 'none'/.test(html), 'автономность: CSP запрещает сетевые соединения');
