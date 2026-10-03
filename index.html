@@ -16,6 +16,7 @@
   двойным кликом документ имеет file-origin, который браузеры трактуют по-разному.
 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data:; font-src 'self' file:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="icon" type="image/svg+xml" href="img/favicon.svg">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/layout.css">
 <link rel="stylesheet" href="css/terminal.css">
@@ -26,7 +27,7 @@
 
   <header id="topbar">
     <div class="brand">
-      <span class="logo">nx</span>
+      <span class="logo" aria-hidden="true"></span>
       <span>Linux Network Engineer Trainer</span>
       <small class="mono">offline</small>
     </div>
